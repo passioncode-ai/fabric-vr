@@ -1,0 +1,2344 @@
+[
+{
+"id": "A-01",
+"sev": "Blocker",
+"cells": [
+"`app/src/main/kotlin/ai/passioncode/fabricvr/ui/NotesViewModel.kt:150` + `ui/TodayScreen.kt:154-218`",
+"`createNote()` exists, `R.string.action_new_note` exists, and **no screen calls either** — there is no way to create a text note.",
+"First session, SCN-001 step 1 \"Tap *New note*\": the Today screen has Search / Assistant / Space / Settings / Record and a list. The only writable note is the daily note `dailyNote()` creates. A person who wants a second text note today cannot make one; a person who dictates gets a voice note. Removed in `732c92b` (\"one button, no windows\") — `git log -S action_new_note` names that commit as the last to touch it in `TodayScreen.kt`.",
+"Put the *New note* action back on the Today header (or make the day card of A-11 the entry), calling `createNote()` and navigating to the editor with the returned id.",
+"`TodayScreenTest`: `a new note can be created from Today` — assert a node with `action_new_note` exists and that clicking it calls `createNote`.",
+""
+]
+},
+{
+"id": "A-02",
+"sev": "Blocker",
+"cells": [
+"`ui/NotesViewModel.kt:220-238`, `feature-vault/.../Vault.kt:110-131`, `VaultMirror.kt:40`",
+"Undo restores the row but not the recording: `delete` → `NoteChange.Deleted` → `FileVault.remove` deletes `<id>.md` **and `<id>.wav`**; `undoDelete` re-upserts a note whose `audioPath` still names the deleted wav, and `FileVault.write:88-93` skips a source that is not a file.",
+"Dictate a note (audio adopted to `vault/notes/2026/09/<id>.wav`), tap *Delete*, tap *Undo*. The note comes back; the wav is gone for good. Tapping *Transcribe again* then hits `File(path).readBytes()` (`NotesViewModel.kt:180`) → `FileNotFoundException` → `AppError.Unknown` → the banner reads \"Something failed: FileNotFoundException.\" SCN-015 promises \"the note returns with its id, its timestamps and its vault file\".",
+"Make the delete recoverable: move `<id>.*` to `vault/.trash/<id>/` instead of unlinking, and have `undoDelete` (or `Vault.restore(id, createdAt)`) move it back; failing that, clear `audioPath` on undo and say the recording could not be restored.",
+"`NotesViewModelTest`: `undo after delete restores the recording, not only the row` — a real `FileVault` + `VaultMirror`, assert `audioPathFor(note).exists()` after undo.",
+""
+]
+},
+{
+"id": "A-03",
+"sev": "Blocker",
+"cells": [
+"`ui/TodayScreen.kt:166,288,291` with `ui/VoiceViewModel.kt:196-204`",
+"The only action offered on a failed transcription is `UiAction.RETRY`, and it is wired to `voiceViewModel.cancel()`, which **deletes** `lastAudioPath` — while the message says \"Couldn't transcribe that. The recording is kept.\" (`core-common/.../strings.xml:16`).",
+"Dictate 40 s; the engine fails (model corrupt, `UnsatisfiedLinkError`, cloud 500 with no local model). The banner appears; the person taps *Retry* or *Dismiss*; both call `cancel()`, the wav is unlinked, the audio and the words are gone. SCN-004 requires \"the audio is kept and offered as a note without a transcript\".",
+"Split the two: `UiAction.RETRY` → re-run `transcribe(lastPcm, language())`; dismissal → keep the file and create a note with the audio and an empty body. Never delete the recording from an error path.",
+"`VoiceViewModelTest`: `a failed transcription keeps the recording and retry re-runs it` — assert the file still exists and that a second `transcribe` was attempted.",
+""
+]
+},
+{
+"id": "A-04",
+"sev": "High",
+"cells": [
+"`ui/TodayScreen.kt:102-108`, `ui/NotesViewModel.kt:243-254`",
+"When the upsert fails, the transcript is thrown away anyway: `consumed()` is called unconditionally after `createVoiceNote`, and the audio has already been **moved** into the vault folder of a note that does not exist.",
+"Disk full / Room write error on a dictation. `adoptOrKeep` moves the scratch wav to `vault/notes/YYYY/MM/<id>.wav`; `upsert` fails; the banner says \"Couldn't save. Your text is still here.\" — it is not: `consumed()` clears `lastPcm`/`lastAudioPath` and the state returns to Idle. The orphan wav is never referenced or cleaned.",
+"Call `consumed()` only when `createVoiceNote` returns non-null; otherwise keep `Ready` (with a Retry) and make the adoption the *last* step, or roll it back when the upsert fails.",
+"`NotesViewModelTest`: `a failed save leaves no orphan recording and keeps the transcript in hand`.",
+""
+]
+},
+{
+"id": "A-05",
+"sev": "High",
+"cells": [
+"`ui/VoiceViewModel.kt:80-83`",
+"`start()` refuses to record when the local model is absent unless `KEY_WHISPER_SERVER_URL` is set — it never consults `KEY_STT_PROVIDER` or the cloud settings.",
+"SCN-014, a fresh headset: pick *Cloud service*, paste the endpoint and key, press *Record* → \"The speech model isn't on this headset yet\" with *Download* (190 MB) and no recording. The cloud path is unreachable until the local model is downloaded.",
+"Gate on the resolved provider: refuse only when the chosen provider has no usable engine *and* the local fallback is missing. Reuse one predicate shared with `Graph.sttEngine()`.",
+"`VoiceViewModelTest`: `with the cloud provider configured, a missing local model does not block recording`.",
+""
+]
+},
+{
+"id": "A-06",
+"sev": "High",
+"cells": [
+"`ui/TodayScreen.kt:212-214`, `ui/NotesViewModel.kt:165-211`, `app/src/main/res/values/strings.xml:110-111`",
+"`RetranscribeResult` is returned and discarded by its only caller; `state_retranscribed` and `state_retranscribed_kept` are defined and referenced nowhere.",
+"Edit a dictated note, then *Transcribe again* → `untouched` is false, the body is left alone, the new transcript is stored invisibly, the spinner stops and **nothing on screen changes**. The person concludes the feature is broken and runs it again. SCN-005 promises the person is told the edit was kept.",
+"Consume the result in `TodayScreen` and set `state.message` to `state_retranscribed` / `state_retranscribed_kept` / the failure.",
+"`NotesViewModelTest`: `re-running an edited note keeps the body and reports TranscriptOnly`, plus a UI assertion that the kept-text line is shown.",
+""
+]
+},
+{
+"id": "A-07",
+"sev": "High",
+"cells": [
+"`ui/VoiceViewModel.kt:143-151` (`Allowed`), `ui/TodayScreen.kt:306`",
+"`VoiceState.Allowed` is produced by `onPermissionResult(granted = true, …)` and consumed by nothing — `RecordControl`'s `when` falls into `else -> Unit`.",
+"SCN-013 step 3: deny the mic, tap *Allow microphone*, grant it in the system dialog → the state becomes `Allowed`, no recording starts, the button reads *Record* again and the person must press a third time. The scenario says \"the recording starts immediately, without re-pressing *Record*\".",
+"Either start recording inside `onPermissionResult` when granted, or add `LaunchedEffect(voice) { if (voice is Allowed) voiceViewModel.start() }`. Delete the state if the extra press is intended, and update SCN-013.",
+"`VoiceViewModelTest`: `granting the microphone starts the recording without another press`.",
+""
+]
+},
+{
+"id": "A-08",
+"sev": "High",
+"cells": [
+"`ui/EditorViewModel.kt:58-71` with `:88-93`",
+"`attachTranscript` publishes `shown` (carrying the **old** `audioPath`) into the state before the adoption finishes, and `flush()`/`edit()` both save whatever is in the state — so a stale `audioPath` can be written over the adopted one.",
+"Dictate into an open note and immediately tap *Back* (which calls `flush()`, `NoteEditorScreen.kt:67,81`). `flush` saves `shown` with `audioPath = null`; the `attachTranscript` coroutine saves the adopted path; last writer wins. When `flush` wins, the wav sits in the vault folder and the note has no `audioPath` — no *Transcribe again*, no audio in the front-matter.",
+"Do not publish a note into the state with an audio path that is about to change: adopt first, then set the state once with the final path, and make `flush()` join the pending attach.",
+"`EditorViewModelTest`: `flushing immediately after a dictation keeps the adopted audio path`.",
+""
+]
+},
+{
+"id": "A-09",
+"sev": "High",
+"cells": [
+"`ui/TodayScreen.kt:405-431` (menu) + `:141-151` (banner), `Graph.kt:138-148`",
+"The *Transcribe again* menu offers all five on-device models with no indication of which are present; picking an absent one yields `AppError.ModelMissing`, whose `UiAction.DOWNLOAD_MODEL` the Today banner maps to `notesViewModel.retry()` — a list reload that downloads nothing.",
+"Default install (only `small` present, or none). Open *Transcribe again* → *Large v3 turbo* → banner \"The speech model isn't on this headset yet\" with a *Download* button that reloads the note list. Pressing it forever changes nothing. SCN-014 alt path promises the download is offered.",
+"Handle `DOWNLOAD_MODEL` in the Today banner by starting `Graph.modelDownloader(model)` for the model that was asked for, and annotate each menu row with present / size.",
+"`TodayScreenTest`: `choosing an absent model offers a download that actually starts` — assert the downloader was invoked.",
+""
+]
+},
+{
+"id": "A-10",
+"sev": "High",
+"cells": [
+"`feature-stt/.../SttRouter.kt:30`, `core-notes/.../Note.kt:9-19`, grep: no UI reader",
+"`fallbackReason` reaches only `MarkdownSerializer.kt:30` (vault front-matter). No screen shows it; `Note.toEntity()` has no column for it, so it does not even survive a reload.",
+"SCN-007 step 3: stop the whisper-server and dictate. The transcript is produced locally and the app says nothing — the Today row prints `engine · language` only (`TodayScreen.kt:395-403`), the editor prints `local_fallback` as a bare word (`NoteEditorScreen.kt:158-169`). The promised \"one-line notice saying the server did not answer\" and \"the notice names the status\" do not exist.",
+"Carry the reason into `VoiceState.Ready` and draw a line above the record button (\"The speech server answered 500 — transcribed on this headset\"); persist `transcriptFallback` if it must survive a restart.",
+"Device: set a dead server URL, dictate, observe the notice naming the status; plus `SttRouterTest` asserting the reason reaches the state the screen reads.",
+""
+]
+},
+{
+"id": "A-11",
+"sev": "High",
+"cells": [
+"`ui/NotesViewModel.kt:59-60,119-128`, `ui/TodayScreen.kt` (no reader)",
+"`state.today` and `state.dayLabel` are computed, reloaded at midnight and rendered nowhere — `grep '\\.today\\",
+"dayLabel' TodayScreen.kt` is empty.",
+"SCN-002 (\"validated\"): open the app → there is no date header and no today card, so \"writing is one tap from launch\" is false; the daily note is only reachable by finding it in the undifferentiated list. The midnight ticker and its test assert a label nothing displays.",
+"Draw the date header and the today card at the top of `TodayScreen`, opening `state.today`. Until then SCN-002 is not validated.",
+"`TodayScreenTest`: `today's note is the first card and opens the editor`.",
+""
+]
+},
+{
+"id": "A-12",
+"sev": "High",
+"cells": [
+"`core-notes/.../db/NotesDatabase.kt:20-40`",
+"`MIGRATION_1_2` deletes every duplicate-`dayKey` row but the oldest, with its text, and emits no `NoteChange`, so the vault keeps an `.md` the index no longer knows about.",
+"A v1 install that hit the daily-note race has two rows for one day; the person wrote into the newer one (the one `getByDay … LIMIT 1` need not have returned). On upgrade the newer row and its FTS entry are deleted silently; the note vanishes from the app while its Markdown file stays behind, orphaned.",
+"Merge instead of delete: concatenate the bodies of the duplicates into the surviving row (or null the `dayKey` of the extras so they survive as ordinary notes) before creating the unique index.",
+"`NotesDatabaseMigrationTest` with `MigrationTestHelper`: seed two v1 rows for one day with distinct bodies, migrate, assert no text was lost.",
+""
+]
+},
+{
+"id": "A-13",
+"sev": "High",
+"cells": [
+"`ui/NotesViewModel.kt:165-211`",
+"`retranscribe` upserts a `Note` snapshot captured before a transcription that takes 13–40 s on this device, with no re-read of the row.",
+"Tap *Transcribe again* on a note, open it in the editor and fix a word while it runs (the list is still interactive; only that row's button is disabled). The editor saves the fix; `retranscribe` then upserts its stale copy and the fix is gone — and `untouched` was computed against the stale body, so the body may also be replaced wholesale.",
+"Re-read `repository.get(note.id)` after the engine returns and apply the transcript to that, recomputing `untouched` against the fresh row; skip the body replacement if `updatedAt` moved.",
+"`NotesViewModelTest`: `an edit made during a re-run survives it`.",
+""
+]
+},
+{
+"id": "A-14",
+"sev": "Medium",
+"cells": [
+"`feature-stt/.../WhisperEngine.kt:29`",
+"`name` is the constant `\"whisper-small-q5_1\"` whatever model the store holds, and it becomes `Transcript.engine` → the row badge, the editor meta line and the vault's `engine:` key.",
+"Re-run a note with *Large v3 turbo*: the badge still reads `whisper-small-q5_1` and the Markdown front-matter records a model that never ran. The badge exists precisely so \"the answer decides whether a re-run with a bigger one is worth waiting for\" (`TodayScreen.kt:393`).",
+"Derive it: `override val name = \"whisper-${modelStore.modelName}\"` (or take `WhisperModel.key`).",
+"`WhisperEngineTest` (JVM part) or a `FileModelStore`-level unit test asserting `name` tracks the model.",
+""
+]
+},
+{
+"id": "A-15",
+"sev": "Medium",
+"cells": [
+"`app/Graph.kt:85-101` vs `:131-149`, `feature-stt/.../SttRouter.kt:20-31`",
+"Two different answers for \"cloud chosen, key missing\": `sttEngine()` builds `remote = null` and the router runs the local engine **silently**, marked `SttSource.LOCAL` with no `fallbackReason`; `withEngine(CLOUD, …)` returns `FailingEngine(NoApiKey)`.",
+"Pick *Cloud service*, save the URL, forget the key, dictate → the recording is transcribed on-device and nothing says the cloud was not used. SCN-014: \"a cloud provider with no key reports that rather than silently falling back.\"",
+"Have `sttEngine()` build `FailingEngine(AppError.NoApiKey)` for a chosen-but-unconfigured provider so the router's fallback path marks it `LOCAL_FALLBACK` with a reason.",
+"`GraphSttEngineTest` / `SttRouterTest`: `a chosen cloud provider with no key falls back visibly, not silently`.",
+""
+]
+},
+{
+"id": "A-16",
+"sev": "Medium",
+"cells": [
+"`app/Graph.kt:136`, `core-common/.../UiStateMapper.kt:53-54`, `strings.xml:23`",
+"The cloud-STT paths reuse `AppError.NoApiKey`, whose only wording is \"Add an OpenRouter key to use the assistant.\"",
+"*Transcribe again* → *Cloud service* with no cloud key → the person is sent to add an **OpenRouter assistant** key, which has nothing to do with the transcription key they are missing.",
+"Add `AppError.NoSttKey` (or a `what` field on `NoApiKey`) with its own string and `OPEN_SETTINGS`.",
+"`UiStateMapperTest`: `the missing speech key and the missing assistant key say different things`.",
+""
+]
+},
+{
+"id": "A-17",
+"sev": "Medium",
+"cells": [
+"`app/Graph.kt:85-101,72-79`, `ui/VoiceViewModel.kt:130-131`",
+"`engine()` is invoked on the main thread (`viewModelScope.launch` defaults to `Dispatchers.Main`), and it performs up to five Keystore decrypts and may call `localEngine()`, whose `close()` (`WhisperEngine.kt:86-97`) does `runBlocking(dispatcher)` behind an in-flight transcription.",
+"Change the model in Settings while a transcription runs, then press *Record*: `sttEngine()` → `localEngine()` → `close()` blocks the **main thread** until the running decode finishes (up to ~40 s measured on this headset) → ANR. Even without that, the Keystore reads are the cost `SettingsViewModel.kt:97` documents as unfit for the main thread.",
+"Resolve the engine inside `withContext(Dispatchers.IO)`, and make `close()` non-blocking (mark closed, free the context on the engine's own thread asynchronously).",
+"`VoiceViewModelTest` with a `StandardTestDispatcher` main and a blocking engine factory; on device, switch models during a decode and watch for an ANR.",
+""
+]
+},
+{
+"id": "A-18",
+"sev": "Medium",
+"cells": [
+"`feature-stt/.../CloudTranscriptionClient.kt:84-92`",
+"The body is read as `source.request(64 KB)` + `buffer.snapshot()`, and when the JSON cannot be parsed or has no `text`, **the raw body becomes the transcript**.",
+"A provider that answers 200 with an SSE frame, an HTML proxy page or a >64 KB JSON body: the note's title and body become `{\"task\":\"transcribe\",\"text\":\"…` or `<html>…`, and that text lands on the clipboard and in the vault.",
+"Read the body fully with a bounded `body.string()`, and fail with `AppError.RemoteStt(code, …)` when `text` is absent rather than falling back to the raw bytes.",
+"`CloudTranscriptionClientTest`: `a body that is not the documented json is an error, not a transcript`.",
+""
+]
+},
+{
+"id": "A-19",
+"sev": "Medium",
+"cells": [
+"`feature-vault/.../VaultMirror.kt:59-69`",
+"`remove`'s failure branch does not clear `pending`, and `FileVault.remove` fails with `FileNotFoundException` whenever there is no file to delete.",
+"Create a note while the vault write is failing (read-only dir) → `pending[id]` and `failures[id]` are set; fix the dir and delete the note → `remove` finds nothing, records another failure, `pending` still holds the note; Settings shows \"out of sync\" forever, and its *Retry* (`retryFailed`) **writes the deleted note's Markdown back into the vault**.",
+"Clear `pending` on the delete path regardless of outcome, and treat \"no file for this id\" as success — a note with no file is already removed.",
+"`VaultMirrorTest`: `deleting a note the vault never held clears the out-of-sync count and never resurrects the file`.",
+""
+]
+},
+{
+"id": "A-20",
+"sev": "Medium",
+"cells": [
+"`core-common/.../SecureSettings.kt:75-82`",
+"Any exception while decrypting — not only a bad tag — deletes the stored ciphertext (`prefs.edit().remove(key)`).",
+"A transient `KeyStoreException` (\"Failed to communicate with keystore\", seen after a device restore or an early-boot read) on one `get` destroys the OpenRouter key *and*, on the next read, the cloud STT key. The person must paste them again with no explanation beyond \"unreadable\".",
+"Delete only on an authentication failure (`AEADBadTagException`, `IllegalBlockSizeException`, malformed encoding); on anything else report and keep the bytes.",
+"`SecureSettingsTest` (instrumented): `a keystore that is temporarily unavailable does not erase the value`.",
+""
+]
+},
+{
+"id": "A-21",
+"sev": "Medium",
+"cells": [
+"`ui/SettingsViewModel.kt:190-215` with `Graph.kt:59-60`",
+"The downloader is bound to the model selected when the download started, but `DownloadProgress.Done` sets `modelPresent = true` in a state that `reload()` has since re-pointed at a different model.",
+"Start downloading *small*, switch the selection to *medium* mid-download. When small finishes, Settings reports the (medium) model as present; pressing *Record* then fails with `ModelMissing`.",
+"Carry the model in the progress state and only set `modelPresent` when `progress.file == modelStore().modelFile()`; cancel or clearly label a download for a model no longer selected.",
+"`SettingsViewModelTest`: `finishing a download for a model no longer selected does not claim the selected one is present`.",
+""
+]
+},
+{
+"id": "A-22",
+"sev": "Medium",
+"cells": [
+"`feature-stt/.../ModelDownloader.kt:136-140`, `ui/SettingsViewModel.kt:192`, `ui/VoiceViewModel.kt:155`",
+"Cancellation deletes the `.part` file, and the collection runs in `viewModelScope` — so leaving the screen throws away the whole partial download; the resume branch (`:99-113`) can therefore only ever engage after a process death.",
+"Start the 190 MB download, navigate back to Today to keep writing (SCN-006 says \"text notes work meanwhile\"), come back — progress is zero and the bytes are gone. On headset Wi-Fi this is minutes each time.",
+"Run the download in `Graph.scope` (or a WorkManager job) keyed by model, expose its progress as a shared flow, and keep the `.part` on cancellation (delete only on an explicit *Cancel*).",
+"`ModelDownloaderTest`: `a resumed partial continues from the byte it stopped at and still hashes` — the test `feature-stt.md` already claims exists.",
+""
+]
+},
+{
+"id": "A-23",
+"sev": "Medium",
+"cells": [
+"`feature-stt/.../AudioRecorder.kt:64-69` + `ui/VoiceViewModel.kt:60,66-68`",
+"Samples accumulate as a `mutableListOf<Short>` of **boxed** values (~20 bytes per 2-byte sample) with no length cap, and `stopAndTranscribe` writes the WAV on the main thread (`:116-118`).",
+"SCN-004 says \"the thought can be as long as it needs to be\". Five minutes of speech is 4.8 M samples ≈ 90–100 MB of boxed objects plus a `ShortArray` copy plus a 9.6 MB WAV written on the UI thread — GC thrash then `OutOfMemoryError`, and the recording is lost at the moment it was to be kept.",
+"Accumulate into a growable `ShortArray`/`ByteArrayOutputStream` (or stream to the scratch WAV as chunks arrive), cap the recording with a visible limit, and move the WAV write to `Dispatchers.IO`.",
+"`VoiceViewModelTest`: `ten minutes of samples do not exhaust the heap`; on device, record 5 minutes and watch the heap.",
+""
+]
+},
+{
+"id": "A-24",
+"sev": "Medium",
+"cells": [
+"`core-notes/.../db/NoteDao.kt:55-57,67-79` with the unique `dayKey` index (`NoteEntity.kt:12-15`)",
+"`@Insert(REPLACE)` on a row whose `dayKey` collides silently evicts the other row, and only `deleteFts(note.id)` runs — the evicted note's FTS entry is orphaned.",
+"Delete today's daily note, trigger `loadDailyNote()` (leave the panel open past midnight, or hit *Retry* on any banner), then press *Undo*: the restored old note replaces the new daily note, whose text — typed in the meantime — is gone without a `NoteChange` and with a stale `note_fts` row left behind.",
+"Insert with `ABORT`/`IGNORE` and handle the conflict explicitly (merge, or drop the `dayKey` of the note being restored); delete the FTS row of any row the insert displaces.",
+"`NotesRepositoryTest`: `restoring a deleted daily note does not silently replace today's note`.",
+""
+]
+},
+{
+"id": "A-25",
+"sev": "Medium",
+"cells": [
+"`ui/TodayScreen.kt:102-108`",
+"The commit of a finished dictation lives in a `LaunchedEffect` keyed on the whole `VoiceState`; leaving the screen between `createVoiceNote` and `consumed()` leaves the state at `Ready`, and re-entering runs the effect again.",
+"Dictate, then tap *Settings* the instant the transcript lands: the note may be written and `consumed()` never reached; on return the effect re-fires and writes a **second** note with the same text, this time with an `audioPath` pointing at a scratch file the first adoption already moved.",
+"Commit the transcript in the view model (a `SharedFlow` of finished transcripts collected once in application scope, or a `consumedId` guard), not in a composition-scoped effect.",
+"`TodayScreenTest`: `a transcript is committed exactly once across a recomposition and a screen change`.",
+""
+]
+},
+{
+"id": "A-26",
+"sev": "Medium",
+"cells": [
+"`app/src/test/kotlin/ai/passioncode/fabricvr/ui/VoiceViewModelStateTest.kt:17-36`",
+"The test re-implements the rule it claims to check (`if (state !is Recording) state else Transcribing`) and never constructs `VoiceViewModel` — it asserts against its own copy of the logic, so `stopAndTranscribe` could be deleted and it would still pass. Its doc also describes a \"hold gesture\" the product no longer has.",
+"The only guard protecting a refused-permission message from being wiped by a release is unverified; a regression in `VoiceViewModel.kt:100` ships green.",
+"Drive the real view model with fake collaborators (the pattern `SettingsViewModelTest` already uses) and delete the inline re-implementation.",
+"`VoiceViewModelTest`: `release after a failed press keeps the failure on screen` — against the real class.",
+""
+]
+},
+{
+"id": "A-27",
+"sev": "Medium",
+"cells": [
+"`docs/modules/feature-stt.md:31-34` vs `feature-stt/src/test/.../ModelDownloaderTest.kt`",
+"The module doc names \"a resumed partial\" among `ModelDownloaderTest`'s six cases; `grep -i 'resum\\",
+"Range'` over that file returns nothing, and the count is stale (8 tests there, 27 in the module against the claimed 19).",
+"The riskiest branch in the downloader — `Range`, `code == 206`, the digest seeded by re-reading the existing `.part`, `append = resuming` — has never been executed. A wrong `already`/digest pairing produces a file that fails its checksum after 190 MB, or worse passes with mixed bytes.",
+"Write the resume test the doc already claims, and correct the counts in the same change.",
+"`ModelDownloaderTest`: `a 206 continues the file and the digest covers the bytes already on disk`.",
+""
+]
+},
+{
+"id": "A-28",
+"sev": "Medium",
+"cells": [
+"`docs/modules/feature-vault.md:23-26` vs `feature-vault/src/test/.../VaultMirrorTest.kt`",
+"The doc says `VaultMirrorTest` (2) covers \"a failed write is remembered per note until that note is written again\". The two tests there are a month-boundary delete and a late subscriber; `failures`, `pending` and `retryFailed()` are untested.",
+"The per-note failure map is the whole mechanism behind \"the vault is out of sync\", and A-19 lives in exactly the untested branch.",
+"Add the two tests the doc describes, or correct the doc.",
+"`VaultMirrorTest`: `a failed write is remembered per note and cleared only by that note's success`.",
+""
+]
+},
+{
+"id": "A-29",
+"sev": "Medium",
+"cells": [
+"`ui/NotesViewModel.kt:186` (`Graph.withEngine`), `app/src/test/.../NotesViewModelTest.kt`",
+"`NotesViewModel` takes its repository and vault as parameters but reaches into the `Graph` singleton for the engine and the language — so `retranscribe`, `delete` and `undoDelete` have **no test at all**, and `docs/modules/app.md:57-61` offers only \"compilation plus the device run\" for the whole `:app` module.",
+"Everything in A-02, A-06 and A-13 is in code no suite touches; `spec §5` lists a test class per contract and none covers SCN-014 / SCN-015.",
+"Inject `engine: suspend (SttProvider, WhisperModel) -> SttEngine` and `language: () -> String`, the way `SettingsViewModel` takes its collaborators, then test the three functions.",
+"`NotesViewModelTest`: `re-running replaces an untouched body`, `…keeps an edited one`, `delete then undo restores the row`.",
+""
+]
+},
+{
+"id": "A-30",
+"sev": "Low",
+"cells": [
+"`core-notes/.../NotesRepository.kt:86-96`, `ui/NotesViewModel.kt:230-238`",
+"`upsert` always stamps `updatedAt = now()`, so `undoDelete` restores the note at the top of the list with a new timestamp.",
+"SCN-015: \"the note returns with its id, its timestamps and its vault file\" — the ordering of the list changes after an accidental delete and undo.",
+"Let `upsert` take the caller's `updatedAt` when restoring (an explicit `touch: Boolean = true`).",
+"`NotesRepositoryTest`: `a restored note keeps its original updatedAt`.",
+""
+]
+},
+{
+"id": "A-31",
+"sev": "Low",
+"cells": [
+"`ui/SearchViewModel.kt:68-72`",
+"`retry()` calls `observe()` again without cancelling the previous `launchIn`, so each retry leaves another collector on the query flow (`NotesViewModel.observe():100-101` does cancel — the two differ).",
+"Tap *Retry* on the search banner five times: five collectors write the same state for the life of the view model. Harmless today, a duplicate-emission source tomorrow.",
+"Keep the `Job` and cancel it first, as `NotesViewModel` does.",
+"`SearchViewModelTest`: `retrying twice leaves one collector`.",
+""
+]
+},
+{
+"id": "A-32",
+"sev": "Low",
+"cells": [
+"`feature-stt/.../ModelDownloader.kt:171-174`",
+"`registrableSuffix` takes the last two labels, so any host under a two-part public suffix collapses to that suffix.",
+"With a store declaring `example.co.uk`, a redirect to `attacker.co.uk` is accepted. Not reachable with the shipped `FileModelStore` (`huggingface.co`, `hf.co`) and the pinned digest is the real defence, but the helper invites it.",
+"Match on the declared host or a `.`-suffix of it, without truncating to two labels.",
+"`ModelDownloaderTest`: `a redirect sharing only a public suffix is refused`.",
+""
+]
+},
+{
+"id": "A-33",
+"sev": "Low",
+"cells": [
+"`core-notes/.../NotesRepository.kt:141-159`",
+"The `existing` read that decides whether to emit `Upserted` sits outside `getOrCreateByDay`'s transaction, unlike the insert it guards.",
+"Two concurrent first-launch callers both read `null`, both emit `Upserted` for the same daily note; the mirror writes the same file twice. Cosmetic today.",
+"Return \"created or found\" from the DAO transaction and emit on that.",
+"`NotesRepositoryTest`: extend `concurrent dailyNote calls…` to assert exactly one `Upserted`.",
+""
+]
+},
+{
+"id": "A-34",
+"sev": "Low",
+"cells": [
+"`ui/VoiceViewModel.kt:123-128`",
+"`retranscribe(language: String)` has no caller — the sheet it belonged to is gone (`grep 'retranscribe(' app/src` finds only the notes-level one).",
+"Dead code that implies SCN-005's \"re-run with a pinned language without speaking again\" exists at the capture step; it does not.",
+"Delete it, or wire a language re-run into the record control.",
+"Compile-time: removing it must not break anything.",
+""
+]
+},
+{
+"id": "A-35",
+"sev": "Low",
+"cells": [
+"`ui/NotesViewModel.kt:240`, `ui/TodayScreen.kt:177-195`",
+"`clearJustDeleted()` is never called, so the \"Deleted …\" row with its *Undo* stays until the next delete.",
+"SCN-015 alt path: \"the line goes when the next note is deleted **or the screen is left**\". It never goes; an *Undo* pressed an hour later re-inserts a note the person had forgotten deleting.",
+"Call `clearJustDeleted()` from a `DisposableEffect`, or expire the offer on a timer.",
+"`TodayScreenTest`: `the undo line does not survive leaving the screen`.",
+""
+]
+},
+{
+"id": "A-36",
+"sev": "Low",
+"cells": [
+"`feature-stt/.../WavWriter.kt:42-48`",
+"`readPcm` assumes exactly 44 header bytes and never checks `RIFF`/`data`.",
+"A recording adopted from anywhere but this app's own writer (a `LIST` chunk, a 24-bit file) is decoded as noise and re-transcribed into nonsense rather than refused.",
+"Parse the chunk table and reject anything that is not 16-bit mono PCM.",
+"`WavWriterTest`: `a wav with an extra chunk is parsed or refused, never mis-read`.",
+""
+]
+},
+{
+"id": "A-37",
+"sev": "Low",
+"cells": [
+"`ui/ChatViewModel.kt:60,72`, `feature-assistant/.../NotesContextBuilder.kt:27`",
+"Every turn re-attaches a fresh 12 000-character note context **and** the whole prior history, with no trimming.",
+"A ten-turn conversation ships ~12 k of notes plus every earlier answer on each request; eventually the provider answers 400 and the person sees \"OpenRouter answered 400: …\" with no way to recover but leaving the screen.",
+"Cap the history (last N turns) and drop the notes block from all but the latest system message.",
+"`ChatViewModelTest`: `a long conversation keeps the request under the budget`.",
+""
+]
+},
+{
+"id": "A-38",
+"sev": "Low",
+"cells": [
+"`ui/ChatViewModel.kt:79-91`",
+"A mid-stream failure sets `streaming = false` inside `catch`, so the guard on the next line skips `finish()` and the partial answer is never committed — it lingers in `state.partial` until the next question wipes it.",
+"Ask a question, lose the network halfway: the words on screen belong to no turn; the next question deletes them. SCN-009 commits a partial on *Stop* but not on a failure.",
+"Commit the partial in the `catch` branch as well, marked as interrupted.",
+"`ChatViewModelTest`: `a stream that fails halfway keeps what arrived`.",
+""
+]
+},
+{
+"id": "B-01",
+"sev": "Blocker",
+"cells": [
+"space",
+"`meta-spatial-sdk-0.14.0.aar` → `com/meta/spatial/runtime/PanelDisplayBase.dispatchEvent` (bytecode 8–105: `imm.isAcceptingText()` → log `\"Software Keyboard was shown\"` → `return`); reached from `SearchScreen.kt:46`, `ChatScreen.kt:121`, `SettingsScreen.kt:91`, `NoteEditorScreen.kt:140`",
+"While the system keyboard is accepting text, **no touch event reaches the panel at all** — the SDK drops it before `rootView`. Nothing in the app ever hides the keyboard or clears focus (`grep SoftwareKeyboardController\\",
+"LocalFocusManager\\",
+"clearFocus` over `app/` + `core-common/` → 0 hits).",
+"In the Space the person taps *Search*; `LaunchedEffect(Unit) { focus.requestFocus() }` opens the keyboard on entry; from that moment the panel eats every tap — *Back*, the clear ✕, the result rows, all of it. Same on Chat (its input is multi-line, so there is not even an IME *Done*), Settings and the editor. The only exits are the system keyboard's own chrome or taking the headset out of the app.",
+"Give every text field `KeyboardOptions(imeAction = Done)` + `KeyboardActions { focusManager.clearFocus(); keyboardController?.hide() }`; drop the auto-focus in Search; add an explicit \"done editing\" affordance drawn **inside** the panel (a full-width bar above the field) so there is always one target that works before the keyboard opens. Longer term: raise it with Meta, or move text entry to a dedicated panel state that closes the IME before re-enabling the rest.",
+"On device: enter the Space, open Search, then try to tap *Back*. `adb logcat -s PanelDisplay` prints `Software Keyboard was shown` for every swallowed tap.",
+""
+]
+},
+{
+"id": "B-02",
+"sev": "Blocker",
+"cells": [
+"both",
+"`TodayScreen.kt:110-219` vs `docs/ux/screens.md:41-52`; dead API: `NotesViewModel.kt:130` (`selectTag`), `:150-154` (`createNote`), `:240` (`clearJustDeleted`), state fields `today`/`tags`/`selectedTag`/`dayLabel` (`:56-63`) never read by any composable",
+"SCR-01 promises a date header, today's daily-note card, *New note*, tag filter chips, per-row time and a microphone glyph. **None of them are rendered.** `today_empty` even says \"or start a note\" — there is no such control.",
+"A first-time user with no notes has no way to create a text note at all: the editor is reachable only through a note row, and there are no rows. SCN-001 (*New note*), SCN-002 (tap today's card), SCN-003 (tag chips) and FLW-01's entry points have no UI.",
+"Either render the promised header/card/*New note*/tag chips on Today, or cut them from `screens.md`, `scenarios.md` and `flows.md` and delete the dead view-model surface in the same change. Do not leave the view model carrying three features the screen does not use.",
+"`createAndroidComposeRule<PanelActivity>`: `onNodeWithText(\"New note\").assertIsDisplayed()` and a tag-chip node; today they fail. Or, if cut: a `ux-lint` run that finds no orphan scenario.",
+""
+]
+},
+{
+"id": "B-03",
+"sev": "High",
+"cells": [
+"panel",
+"`app/src/androidTest/.../PanelSmokeTest.kt:20-21`",
+"The only Compose UI test in the repo asserts `\"Hold to record\"` and `\"New note\"`. Neither string is rendered any more — `action_hold_to_record` and `action_new_note` are in the unused list (B-26).",
+"The instrumented suite is red on the one test that watches the panel launch, so the merge lands with no working smoke test and the gate that would have caught B-02 is the thing that broke.",
+"Rewrite against what the screen shows (`R.string.action_record`), and assert with `onNodeWithText(context.getString(R.string.action_record))` rather than a literal, so the next copy change fails the test loudly instead of silently.",
+"`./gradlew :app:connectedDebugAndroidTest --tests '*PanelSmokeTest*'` — red now, green after.",
+""
+]
+},
+{
+"id": "B-04",
+"sev": "High",
+"cells": [
+"both",
+"`TodayScreen.kt:146` and `:287`, `ChatScreen.kt:58`, `SettingsScreen.kt` (no handler); `UiStateMapper.kt:16`; `grep ACTION_APPLICATION_DETAILS_SETTINGS` → 0 hits",
+"`UiAction.OPEN_APP_SETTINGS` — label \"App settings\", raised by `AppError.Permission(permanent = true)` — is routed to **the app's own Settings screen**, which has no microphone control.",
+"The person denies the microphone twice. The banner reads \"The microphone is blocked for this app.\" and offers *App settings*; tapping it lands them on OpenRouter keys and speech providers. There is no path to the Android permission page. SCN-013's alt path (\"the sheet offers *Open app settings*\") is not implemented.",
+"Hoist an `onOpenAppSettings` lambda beside `PermissionRequester` (the same reason: `ImmersiveActivity` is not a `ComponentActivity`) that starts `Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts(\"package\", packageName, null))` with `FLAG_ACTIVITY_NEW_TASK`, and wire `OPEN_APP_SETTINGS` to it in all three screens. Confirm the Horizon shell shows that page over an immersive activity; if it does not, say so in the banner instead of pretending.",
+"On device, panel host: deny twice, tap *App settings*, expect the OS app-info page. In the Space, expect either the page or an honest message.",
+""
+]
+},
+{
+"id": "B-05",
+"sev": "High",
+"cells": [
+"both",
+"`VoiceViewModel.kt:143-151` (`granted -> VoiceState.Allowed`), `TodayScreen.kt:306` (`else -> Unit`), `NoteEditorScreen.kt:92-101`; `state_allowed` unused",
+"Granting the microphone puts the machine in `Allowed`, which **renders nothing and starts nothing**. The button falls back to *Record* and the person must press again.",
+"SCN-013 step 3 says \"Tap *Grant* and allow -> the recording starts immediately, without re-pressing *Record*.\" First-session path; the person has already pressed once, answered a system dialog, and is now looking at a screen that behaves as if nothing happened.",
+"In `onPermissionResult`, on `granted` call `start()` instead of parking in `Allowed` (or delete `Allowed` entirely — nothing else reads it). Add `state_allowed` back only if something renders it.",
+"`VoiceViewModelStateTest`: grant → assert the next state is `Recording`, not `Allowed`.",
+""
+]
+},
+{
+"id": "B-06",
+"sev": "High",
+"cells": [
+"both",
+"`TodayScreen.kt:288` (`UiAction.RETRY -> onDismissFailure()`), `:166` (`onDismissFailure = { voiceViewModel.cancel() }`), `VoiceViewModel.kt:196-204` (`cancel()` deletes `lastAudioPath`), `:178-183` (`retryLast()` never called)",
+"*Retry* on a dictation failure does not retry: it calls `cancel()`, which **deletes the recording**. `error_stt_failed` reads \"Couldn't transcribe that. The recording is kept.\"",
+"Transcription fails, the person reads \"the recording is kept\" and presses the only button offered — and the WAV is unlinked. `Components.kt:30-34` documents this exact class of bug as already fixed; it is not fixed here.",
+"Wire `UiAction.RETRY` to `voiceViewModel.retryLast()` (it exists and does the right thing), and keep `cancel()` behind the banner's ✕ only — or better, make ✕ dismiss without deleting and give deletion its own explicit control.",
+"`VoiceViewModelStateTest`: `Failed(SttFailed)` → `retryLast()` → assert `lastAudioPath`'s file still exists and state is `Transcribing`.",
+""
+]
+},
+{
+"id": "B-07",
+"sev": "High",
+"cells": [
+"both",
+"`VoiceViewModel.kt:80-83` (`modelMissing() && serverUrl().isNullOrBlank()`), vs `Graph.kt:86-102` which also honours `KEY_CLOUD_STT_URL` / `KEY_CLOUD_STT_KEY`",
+"The refusal to record checks only `KEY_WHISPER_SERVER_URL`. A person who chose *Cloud service* and has no local model is told the on-device model is missing.",
+"Settings → *Cloud service*, address + key saved, provider works. Press *Record* on Today: `error_model_missing` plus a *Download* button for a 190 MB file they do not need and the flow will not use. The download is the only action offered.",
+"Gate on the engine that will actually run: `modelMissing() && Graph.sttEngine() has no remote` — i.e. resolve the provider (`LOCAL`/`CLOUD`/`SERVER`) and only block when the resolved chain ends at an absent local model.",
+"`VoiceViewModelStateTest` with provider = CLOUD, cloud URL+key set, local model absent → `start()` must reach `Recording`, not `Failed(ModelMissing)`.",
+""
+]
+},
+{
+"id": "B-08",
+"sev": "High",
+"cells": [
+"space",
+"`ImmersiveActivity.kt:95-104` sets `layoutWidthInDp/HeightInDp/layoutDpi` and never `width`/`height`; `PanelConfigOptions` synthetic default ctor (bytecode: `height = 0.75f`, `width = 1.0f`, `fractionOfScreen = 0.5f`, `layoutDpi = 288`)",
+"The panel's **physical** quad is 1.0 m × 0.75 m (4:3) while the texture is 1024 × 640 dp (1.6:1). The Compose tree is stretched onto the wrong aspect.",
+"Everything in the Space is ~20 % taller than drawn: type, the 128 dp record button, the circular progress indicator (an ellipse), icon glyphs. `screens.md:31-37` reasons carefully about the pixel budget and never mentions the metre size, so nobody noticed.",
+"Set `width = 1.0f` and `height = 1.0f * 640f / 1024f` (0.625 m) in the `config {}` block — or set them from the same constants the dp size comes from, so the two cannot drift again. Add the metre size to `screens.md` → *Panel geometry*.",
+"On device: a screenshot of the Space with a known-square element (e.g. a temporary 100 × 100 dp box) and measure it; or read back `PanelSceneObject`'s shape config in a debug log.",
+""
+]
+},
+{
+"id": "B-09",
+"sev": "High",
+"cells": [
+"space",
+"`TodayScreen.kt:407-431` (`Box { OutlinedButton; DropdownMenu }`), material3 1.3.0 `DropdownMenu` → `Popup(properties = PopupProperties(focusable = true))`; host is a `Presentation` on a `VirtualDisplay` created with flags `11` (PUBLIC\\",
+"PRESENTATION\\",
+"OWN_CONTENT_ONLY — no `SUPPORTS_TOUCH`, no `TRUSTED`)",
+"*Transcribe again* — the only way to re-run a recording, and the whole of SCN-005's recovery — is reachable **only** through a `Popup`, which adds a second window via `WindowManager` on the virtual display and asks for input focus there. Input reaches the panel by `InputManager.injectInputEvent` with a reflected `MotionEvent.setDisplayId`, or through `horizonos.app.container.TaskContainer`. Whether a focusable sub-window on that display is composited into the panel texture **and** receives injected input is unverified.",
+"If it does not work, the menu either never appears or appears and cannot be dismissed, and re-transcription is unreachable in the Space. If it half-works (renders, no focus) the menu is a trap: it swallows the next tap and the outside-tap dismiss never fires.",
+"Do not gamble on `Popup` inside a Spatial panel. Replace the menu with in-place content in the same `Column` (the screen already argues, at `TodayScreen.kt:63-72`, that a second window in a headset is a wall — a `Popup` **is** a second window). An expanded inline list of the seven `SpeechChoice`s costs one recomposition and no window.",
+"On device, in the Space: tap *Transcribe again*, screenshot; then tap an item, then tap outside. All three must behave. Until then this row stays \"unknown\".",
+""
+]
+},
+{
+"id": "B-10",
+"sev": "High",
+"cells": [
+"both",
+"`TodayScreen.kt:212-214` (`scope.launch { notesViewModel.retranscribe(...) }` — result discarded); `NotesViewModel.kt:51-52`, `:207`; `state_retranscribed` / `state_retranscribed_kept` unused",
+"`RetranscribeResult` exists precisely so the screen can say \"done\" versus \"done, but your edited text was kept\" (`NotesViewModel.kt:156-164`). The screen throws the value away.",
+"The person edited a note, re-runs it with a bigger model, sees the spinner stop — and nothing else. The body is unchanged (correctly), so it looks as if the re-run did nothing. SCN-005's recovery promise is not delivered.",
+"Collect the result and render the two existing strings where the \"Saved, and copied\" line already goes; `NoRecording`/`Failed` already reach the banner.",
+"Compose test: a note with an edited body, retranscribe, assert `state_retranscribed_kept` is displayed.",
+""
+]
+},
+{
+"id": "B-11",
+"sev": "High",
+"cells": [
+"panel",
+"`TodayScreen.kt:110-116` (outer `Column`, no `verticalScroll`), `:204` (`LazyColumn` is the last, unweighted child); `AndroidManifest.xml:47-51` (`minWidth 480dp`, `minHeight 360dp`)",
+"The outer Column does not scroll and the note list is measured with whatever height is left. At the manifest minimum there is nothing left.",
+"360 dp − 48 dp padding = 312 dp. Header 64 + 16, record button 128 + 16 = 224 dp. An `ErrorBanner` (~56) + the \"Saved, and copied\" line (~30) + the Undo row (~72) exceeds the remainder: the `LazyColumn` is measured at 0 dp, the notes vanish, and there is no scroll to reach them. The person can shrink the panel to this size from the shell.",
+"Give the `LazyColumn` `Modifier.weight(1f)` and put the transient rows (banner, copied, deleted) inside the list as `item {}`s, or make the outer Column scrollable and the list fixed-height. Then add a minimum: below ~420 dp of height, collapse the header to icons only.",
+"Compose test at 480 × 360 dp (`createComposeRule` + `DeviceConfigurationOverride.ForcedSize`): with a message, a justCopied and a justDeleted row present, assert the first note row is displayed.",
+""
+]
+},
+{
+"id": "B-12",
+"sev": "High",
+"cells": [
+"both",
+"`SettingsScreen.kt:65` (`LaunchedEffect(state.savedTick) { if (savedTick > 0) { key = \"\"; cloudKey = \"\" } }`), `SettingsViewModel.kt:241` (`savedTick` incremented by **every** successful `put`)",
+"Both secret fields are cleared whenever *any* setting saves — language, provider, model, whisper model, server URL, cloud URL.",
+"Paste an OpenRouter key, then tap a language chip before pressing *Save key*: the pasted key is gone, with no message. In a headset, re-pasting a 70-character key is not a small cost.",
+"Make the tick carry what was saved (`savedKey: String?` or a per-key tick) and clear only the field whose own save succeeded.",
+"`SettingsViewModelTest` + a Compose test: type into the key field, call `saveLanguage(\"ru\")`, assert the key field still holds the text.",
+""
+]
+},
+{
+"id": "B-13",
+"sev": "Medium",
+"cells": [
+"both",
+"`TodayScreen.kt:233-239` (the doc comment) vs `:251-342` (status content is drawn **above** the button inside the same top-aligned Column); `scenarios.md` SCN-004 *UI elements*",
+"\"The button underneath keeps its place and its size through all of them, so the thing a person aims at never moves\" is false. Recording adds a progress bar + a seconds line; Downloading adds three rows including a Cancel button; Failed adds a banner. Each changes the button's y position.",
+"The person holds a ray on *Stop recording*; the moment they press, the meter above disappears and the button jumps up under their cursor. A stray second click is caught by `enabled = !working`, but the aim point has moved twice per dictation.",
+"Reserve the status area: wrap it in a `Box(Modifier.height(statusSlot))` sized for the tallest state, or anchor the button to the bottom of the screen (`Spacer(weight(1f))` above it) so nothing above can move it.",
+"On device or in a screenshot test: capture the button's bounds in Idle / Recording / Transcribing / Failed and assert they are identical (`onNodeWithText(...).getBoundsInRoot()`).",
+""
+]
+},
+{
+"id": "B-14",
+"sev": "Medium",
+"cells": [
+"both",
+"`TodayScreen.kt:370` (`var copied by remember { mutableStateOf(false) }`), `:446` (`onCopy(); copied = true`), `:452`",
+"`copied` is never reset. The row's button reads *Copied* for the rest of the screen's life.",
+"Copy note A, then change it and copy again: the label already said *Copied*, so the second copy gives no feedback at all. Scroll it far out of the `LazyColumn` and back and the flag survives (the item is keyed and `remember` is retained per key while in the viewport's reuse window), so the label lies inconsistently.",
+"Mirror the `justCopied` pattern already in this file (`:93-98`): `LaunchedEffect(copied) { if (copied) { delay(CONFIRMATION_MS); copied = false } }`.",
+"Compose test: tap *Copy*, assert `action_copied`, advance the clock 2.6 s, assert `action_copy`.",
+""
+]
+},
+{
+"id": "B-15",
+"sev": "Medium",
+"cells": [
+"space",
+"`SpatialPanelOwners.kt:42-43` + `ImmersiveActivity.kt:46`; `meta-spatial-sdk-0.14.0.aar` → `VrActivity.dispatchKeyEvent` (returns `true` for pinned game-controller devices, `false` otherwise, and **never calls `super`**)",
+"`Activity.onBackPressed()` is therefore never invoked in the immersive activity, so nothing ever dispatches to `owners.onBackPressedDispatcher`. `onUnhandledBack = { returnToPanel() }` is dead code, and a Back press in the Space does nothing.",
+"The person presses the controller's B / the back gesture in the Space expecting to leave, and nothing happens. The only exit is the `ViewInAr` icon in the header (see B-25 — it is unlabelled and identical to the *Space* icon).",
+"Either override `dispatchKeyEvent` in `ImmersiveActivity` to forward `KEYCODE_BACK` (up, no repeat) to `owners.onBackPressedDispatcher.onBackPressed()`, or say plainly in `SpatialPanelOwners`'s doc that the dispatcher exists only to satisfy `PredictiveBackHandler` and that the fallback is unreachable. Today the comment claims a behaviour the platform does not deliver.",
+"On device: in the Space on the Settings screen, press Back — expect a pop to Today; on Today, expect the panel. Or an instrumented test that calls `dispatchKeyEvent(KeyEvent(ACTION_UP, KEYCODE_BACK))` on the activity and asserts the nav stack popped.",
+""
+]
+},
+{
+"id": "B-16",
+"sev": "Medium",
+"cells": [
+"space",
+"`SpatialPanelOwners.kt:14-30` (the doc) vs `meta-spatial-sdk-compose-0.14.0.aar` → `PanelRegistrationExtensionKt.composePanel` → `AppSystemActivityExtensionKt.attachLifecycleToRootView` (sets all three ViewTree owners from `ComposeFeature.panelViewLifecycleOwner`)",
+"Three of the four owners were already supplied by the SDK. Providing them again in `CompositionLocalProvider` creates a split: **composables** see `SpatialPanelOwners`, while anything resolving through the **view tree** — `Popup`, `Dialog`, `AndroidView`, and `ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed`, which `composePanel` installs — sees the SDK's owner.",
+"Two lifecycles must now be kept in step by hand, and `onStart`/`onStop` are not handled at all (`ImmersiveActivity.kt:53-66` drives only create/resume/pause/destroy). A `Popup` subtree gets a different `ViewModelStore` from its parent composition. Nothing has bitten yet because only one Popup exists (B-09) and no `AndroidView`.",
+"Keep only `LocalOnBackPressedDispatcherOwner` (the one that was actually missing) and let the SDK's owners flow through the view tree; or, if the app's own lifecycle is wanted, also set it on the `ComposeView` with `setViewTreeLifecycleOwner` etc. so there is exactly one answer. Correct the file's doc either way.",
+"Unit-assert in the panel composition that `LocalLifecycleOwner.current === LocalView.current.findViewTreeLifecycleOwner()`.",
+""
+]
+},
+{
+"id": "B-17",
+"sev": "Medium",
+"cells": [
+"space",
+"`FabricApp.kt:39` (`Surface(color = Tokens.Palette.ink)`), `TodayScreen.kt:113` (`.background(Tokens.Palette.ink)`) vs `ImmersiveActivity.kt:96-103` (`enableTransparent = true`, `includeGlass = false`, `Theme_FabricVR_Transparent`) and `app/src/main/res/values/themes.xml:6-9`",
+"The transparency work is defeated one layer up: `ink` is `0xFF0B0E12`, fully opaque, painted over the whole panel. The comment says the default glass \"would put an opaque plate between the person and their own room\"; the Compose tree paints exactly that plate.",
+"Either the intent (float over passthrough) or the implementation is wrong, and nobody can tell which from the code. Alpha compositing is being paid for and thrown away.",
+"Decide it: if the panel should float, give the Surface `ink.copy(alpha = …)` (and check legibility over a bright room — this is the contrast question the transparent theme was for); if it should be solid, drop `enableTransparent`, `includeGlass = false` and the transparent theme, and rewrite the comment.",
+"On device: screenshot the Space against a bright wall and against a dark one. The panel background must look the same in both if it is opaque.",
+""
+]
+},
+{
+"id": "B-18",
+"sev": "Medium",
+"cells": [
+"both",
+"`Components.kt:55` (action `TextButton`, default 40 dp) and `:57` (dismiss `IconButton`, 48 dp); `TodayScreen.kt:81`,`NoteEditorScreen.kt:81`, `SearchScreen.kt:49`, `ChatScreen.kt:49`, `SettingsScreen.kt:71` (`TextButton` Back); `SettingsScreen.kt:105`,`:134`,`:152`,`:165` (`FilterChip`, 32 dp high); `ChatScreen.kt:128`,`:130`; `SettingsScreen.kt:100-101`,`:119`,`:185`,`:190`,`:192`,`:231`,`:252`,`:257`,`:269`",
+"`Tokens.Space` declares 72 dp as the floor for \"anything else a person taps\" and explains why (a ray pivots at the wrist). Most controls in the product are Material defaults well below it — including every `ErrorBanner` action, which is the control offered at the worst moment.",
+"A miss on *Retry* hits ✕ and dismisses the message instead; a miss on a 32 dp language chip hits its neighbour and silently changes the transcription language.",
+"Add a `FabricButton` / `FabricTextButton` / `FabricChip` in `core-common/ui` that applies `Modifier.heightIn(min = Tokens.Space.controlHeight)` and use them everywhere; make `ErrorBanner` use them so the fix reaches all five screens at once.",
+"Compose test helper asserting `getBoundsInRoot().height >= 72.dp` for every node with a click action on each screen.",
+""
+]
+},
+{
+"id": "B-19",
+"sev": "Medium",
+"cells": [
+"both",
+"`TodayScreen.kt:131` (`notesViewModel.spaceStarting()`), `NotesViewModel.kt:141` (`spaceStarting` set, never read by a composable); `state_space_starting` unused",
+"Tapping *Space* sets a flag nothing renders. The immersive activity takes seconds to reach `onSceneReady`, and the panel shows no change at all.",
+"The person taps the cube icon, nothing happens visibly, so they tap again — a second `startActivity` for a `singleTask` activity. SCR-08's `loading` state is documented and not built.",
+"Render `state_space_starting` (the string is already written) in the same slot the banner uses, and disable the *Space* action while `spaceStarting` is true; clear it in `onResume`.",
+"Compose test: tap *Space* with a failing `onEnterSpace`, assert the starting line appears then the failure banner replaces it.",
+""
+]
+},
+{
+"id": "B-20",
+"sev": "Medium",
+"cells": [
+"both",
+"`TodayScreen.kt:381-441` — the `Column(Modifier.weight(1f).clickable(onClick = onClick))` **contains** the `FlowRow` with *Transcribe again* and *Delete*",
+"The open-the-note click target wraps the two action buttons, so every pixel of gutter between and around them opens the editor.",
+"Aiming at *Delete* from a metre and landing 6 dp low opens the note instead — recoverable. Aiming at the note body and landing on *Delete* is not (it is recoverable via *Undo*, but only if the person notices). Either way the row has no stable mental model of what a tap does.",
+"Move `clickable` onto the title/meta texts only, or give the row an explicit *Open* affordance and drop the whole-column click.",
+"Compose test: `onNodeWithText(<title>).performTouchInput { click(bottomCenter) }` must not navigate.",
+""
+]
+},
+{
+"id": "B-21",
+"sev": "Medium",
+"cells": [
+"both",
+"`NoteEditorScreen.kt:161-169` (`transcript.source.name.lowercase()` into `editor_transcript_meta`); `TodayScreen.kt:395-403` (raw `transcript.engine`); `stt_source_local`, `stt_source_remote`, `stt_source_local_fallback` all unused; `Transcript.fallbackReason` (`Note.kt:19`) never rendered",
+"Raw enum names reach the screen — `\"local_fallback\"` — while the three human strings written for exactly this sit unused. And the fallback reason, which `Note.kt:9-11` calls \"the receipt's most important field\", is never shown.",
+"SCN-007 step 3 promises \"a one-line notice saying the server did not answer\". The person's speech went to a server, silently failed, and ran locally instead; the note says `local_fallback` in English and nothing about why.",
+"Map `SttSource` to the three existing strings the way `SpeechChoice.kt` maps the other two enums, and render `fallbackReason` through `UiStateMapper` under the transcript line.",
+"`UiStringsTest`-style instrumented test: every `SttSource` resolves to a non-blank, non-enum-looking string. Compose test: a transcript with `source = LOCAL_FALLBACK` shows the fallback notice.",
+""
+]
+},
+{
+"id": "B-22",
+"sev": "Medium",
+"cells": [
+"both",
+"`ChatScreen.kt:84-88` (three English literals) vs `app/src/main/res/values/strings.xml:2-6` (\"Every word the person reads, in one file. Kotlin holds none of them\")",
+"The chat's three example questions — the empty state SCR-05 documents — are hard-coded in Kotlin.",
+"A copy pass or a translation misses them; the empty state is the first thing every user of the assistant reads.",
+"Three `<string>`s and a `stringArrayResource`, or three `stringResource` calls.",
+"`grep -nE '\"[A-Z][a-z].* .*\"' app/src/main/kotlin/**/ui/*.kt` in CI, allow-listing log keys.",
+""
+]
+},
+{
+"id": "B-23",
+"sev": "Medium",
+"cells": [
+"both",
+"`docs/ux/screens.md:11`,`:15`,`:74`,`:113` point at `ui/VoiceCaptureSheet.kt` — the file does not exist (`ls app/src/main/kotlin/ai/passioncode/fabricvr/ui/`); `screens.md:57` promises an audio player in SCR-02; `:78` promises tag chips in SCR-04",
+"Two screens (SCR-03 *Voice capture sheet*, SCR-07 *Model download*) are marked **built** against a deleted file, and two more elements are promised and absent.",
+"The design map says the product has a capture sheet; the product's own code comment (`TodayScreen.kt:67`) says the sheet's absence is deliberate design. Anyone reading the docs to plan work starts from a false picture.",
+"Rewrite SCR-03 and SCR-07 as states of SCR-01/SCR-02 (which is what they are now: `RecordControl`'s `Downloading` and `Failed` branches), and either build or cut the audio player and the search tag chips.",
+"`docs/ux/lint.py` extended to resolve every `Coverage:` path — exit non-zero on a missing file.",
+""
+]
+},
+{
+"id": "B-24",
+"sev": "Medium",
+"cells": [
+"both",
+"`SettingsScreen.kt:60-62` (`LaunchedEffect(state.serverUrl) { server = state.serverUrl }`, same for `cloudUrl`, `cloudModel`); `SettingsViewModel.kt:241-242` (`put` → `reload()`)",
+"The field-seeding effects re-fire on every `reload()`, which runs after **every** successful save of any setting — reverting an unsaved edit in a neighbouring field.",
+"Type a new whisper-server URL, then tap *Cloud service* to compare the note beneath it: the server URL you typed is replaced by the stored one.",
+"Seed once (`LaunchedEffect(Unit)` plus an explicit \"reset from state\" action), or key the effects on a value that only changes when the stored value truly changes and the field is not dirty.",
+"`SettingsViewModelTest` + Compose: type in the server field, save the language, assert the typed text survives.",
+""
+]
+},
+{
+"id": "B-25",
+"sev": "Medium",
+"cells": [
+"both",
+"`TodayScreen.kt:127-138`, `:346-357`",
+"Five icon-only header actions with no visible labels; *Assistant* is `Icons.Filled.Mic` — a microphone, next to a screen whose whole subject is dictation; *Space* and *Back to panel* are the same `Icons.Filled.ViewInAr` glyph (the latter with `contentDescription = \"Back\"`).",
+"In the Space, the single way out of the app is an unlabelled cube identical to the one that got you in. And the mic icon invites a person looking for \"record\" into the chat.",
+"Label the header actions (icon + text; there is room at 1024 dp and the header can collapse below ~600 dp), give the assistant a chat glyph and *Back to panel* an exit/window glyph.",
+"On device: hand the headset to someone who has not seen the app and ask them to leave the Space. Or a Compose test asserting each header node exposes a visible text label, not only a content description.",
+""
+]
+},
+{
+"id": "B-26",
+"sev": "Medium",
+"cells": [
+"—",
+"`app/src/main/res/values/strings.xml`",
+"26 declared strings are referenced nowhere: `action_allow` (the app copy — `core-common`'s is the one in use), `action_close`, `action_discard`, `action_hold_to_record`, `action_new_note`, `action_rerun_language`, `action_start_record`, `action_try_again`, `action_write_instead`, `label_today_note`, `label_transcript`, `label_voice_note`, `label_voice_note_icon`, `state_allowed`, `state_keep_holding`, `state_listening`, `state_release_to_finish`, `state_retranscribed`, `state_retranscribed_kept`, `state_space_starting`, `stt_source_local`, `stt_source_local_fallback`, `stt_source_remote`, `tag_hash`, `voice_getting_model`, `voice_release_to_stop`. Nine of them are the visible half of B-02/B-05/B-10/B-19/B-21. Duplicated concepts: `action_record`/`action_start_record`, `action_stop`/`action_stop_record`, `action_clear`/`action_clear_query`, `state_getting_model`/`voice_getting_model`, `action_try_again`/`action_retry` (core), `action_allow` in both modules.",
+"A translator pays for 26 dead strings; a reviewer reads them as evidence of features that exist.",
+"Delete the ones whose feature was cut (the hold-to-record family, `label_voice_note*`); render the ones whose feature is merely unwired (B-05, B-10, B-19, B-21) in the same change; collapse each duplicated pair to one name.",
+"A unit test or lint step that fails on an unreferenced `<string>` (the list above is reproducible with a 20-line script over `R.string.` / `@string/` references).",
+""
+]
+},
+{
+"id": "B-27",
+"sev": "Medium",
+"cells": [
+"space",
+"`ChatScreen.kt:121-126` (no `singleLine`, no `KeyboardOptions`), `SettingsScreen.kt:91-98` and the five other fields; nothing calls `hide()`/`clearFocus()` anywhere",
+"The other half of B-01: even where the IME would let go, nothing tells it to. The chat input is multi-line, so its IME shows a newline key and there is no *Done* at all.",
+"In the Space, the chat input is the one field with no keyboard-side exit.",
+"Add `imeAction = Done` + `KeyboardActions` to every single-line field; give the chat field `imeAction = Send` wired to `viewModel.ask(question)`; hide the keyboard on `ask`, on `saveKey`, and on every navigation.",
+"Covered by B-01's device check; plus a Compose test asserting `performImeAction()` submits the chat.",
+""
+]
+},
+{
+"id": "B-28",
+"sev": "Medium",
+"cells": [
+"both",
+"`TodayScreen.kt:102-108`",
+"`LaunchedEffect(voice)` is keyed on the whole `VoiceState`, which changes on every level sample during `Recording` (`VoiceViewModel.kt:89`) — the effect is torn down and restarted per audio frame. And the commit is not atomic: `createVoiceNote` suspends, then `consumed()` runs.",
+"Leaving Today while a transcript is landing (a tap on a note row, or the Space) cancels the effect between `createVoiceNote` and `consumed()`. The machine stays in `Ready`, and on return the effect fires again and creates a **second** note from the same transcript.",
+"Key the effect on the identity of the result, not the state: `LaunchedEffect((voice as? VoiceState.Ready)?.transcript)`, and move the commit into the view model (`VoiceViewModel` hands the transcript to `NotesViewModel` once, behind its own scope) so a screen leaving composition cannot split it.",
+"`NotesViewModelTest`: deliver `Ready`, cancel the collecting scope mid-`createVoiceNote`, re-collect, assert exactly one note.",
+""
+]
+},
+{
+"id": "B-29",
+"sev": "Medium",
+"cells": [
+"space",
+"`ImmersiveActivity.kt:105-123`; `PanelDisplayBase.recreateVirtualDisplay` / `resize` call `getView(ctx)` again, producing a new `ComposeView`; `FabricApp.kt:40` (`rememberNavController()` inside the composition)",
+"A panel rebuild discards the whole composition, so a **new** `NavController` and new `NavBackStackEntry`s are created. `rememberSaveable` state (`ChatScreen.kt:41`, `SettingsScreen.kt:51-56`) and the current destination are lost, and the previous entries' ViewModels stay in `SpatialPanelOwners.viewModelStore` until the activity dies.",
+"The person is three screens deep in Settings with a half-typed cloud URL; the panel is resized or the display is recreated and they are back on Today with empty fields. Severity depends on how often the SDK rebuilds — `Grabbable()` moves rather than resizes, so this may be rare.",
+"Hoist the nav state out of the composition (a `NavController` held by the activity, or save/restore `navController.saveState()` through the app's `SavedStateRegistry` — `SpatialPanelOwners` already has one and never calls `performSave`).",
+"On device: enter the Space, navigate to Settings, force a panel resize (or trigger `PanelSceneObject.resize`) and check whether Settings is still on screen. Unknown until measured.",
+""
+]
+},
+{
+"id": "B-30",
+"sev": "Low",
+"cells": [
+"both",
+"`NoteEditorScreen.kt:48` (`onSettings` parameter), `FabricApp.kt:61` (it is passed) — never called in the body; `NoteEditorScreen.kt:69` + `:175` (a `Box(fillMaxSize)` wrapping a single child)",
+"Dead parameter and a no-op layout node left from a removed feature.",
+"None user-visible; it misleads the next reader into thinking the editor can reach Settings.",
+"Delete both.",
+"`./gradlew :app:compileDebugKotlin -Werror` once unused-parameter warnings are enabled.",
+""
+]
+},
+{
+"id": "B-31",
+"sev": "Low",
+"cells": [
+"both",
+"`NoteEditorScreen.kt:152` (`heightIn(min = 160.dp)`); unused imports: `TodayScreen.kt:15,43,47,53`, `NoteEditorScreen.kt:27,28,31,32,33`",
+"One hard-coded dp outside `Tokens` (the only one in the whole UI, which is otherwise clean), plus nine dead imports.",
+"Drift starts at one.",
+"`Tokens.Space.bodyFieldMinHeight = 160.dp`; delete the imports.",
+"`grep -nE '[0-9]+\\.dp' app/src/main/kotlin core-common/src/main/kotlin \\",
+"grep -v Tokens.kt` must be empty.",
+""
+]
+},
+{
+"id": "B-32",
+"sev": "Low",
+"cells": [
+"both",
+"`Tokens.kt:23-24` (`danger` and `recording` are both `0xFFE0736B`); `Tokens.kt:71-75` (`Motion.quickMs`/`calmMs` referenced nowhere)",
+"\"Recording\" and \"error\" are the same colour, and the motion tokens describe a motion system the app does not have.",
+"A person glancing at the panel cannot tell a live recording from a failed one by colour alone; the record button and the error text are the same red.",
+"Give `recording` its own hue, or accept it and say so in the token's doc. Either use the motion tokens (the status swap in `RecordControl` is the obvious place) or delete them.",
+"Visual check in both hosts; `grep -rn \"Tokens.Motion\"` returns non-empty.",
+""
+]
+},
+{
+"id": "B-33",
+"sev": "Low",
+"cells": [
+"both",
+"`TodayScreen.kt:300-304`; `action_try_again` unused",
+"`NothingHeard` renders one warn-coloured line, offers no action, and never clears — it sits until the next press. SCN-004 promises \"*Try again*\".",
+"Cosmetic, but the state looks like a stuck error.",
+"Auto-clear after `CONFIRMATION_MS` like `justCopied`, or offer the *Try again* string on the main button.",
+"Compose test: reach `NothingHeard`, advance 3 s, assert the line is gone.",
+""
+]
+},
+{
+"id": "B-34",
+"sev": "Low",
+"cells": [
+"both",
+"`SearchScreen.kt:46` (`LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }`)",
+"The `runCatching` hides the \"FocusRequester is not initialized\" case; when it fires, the field simply is not focused and nothing says so.",
+"In the panel host this is a silent regression waiting to happen; in the Space the auto-focus is actively harmful (B-01).",
+"Request focus after the first layout pass, and in the Space do not auto-focus at all (pass a flag down, the same way `onEnterSpace`/`onLeaveSpace` already distinguish the hosts).",
+"Compose test asserting the field `assertIsFocused()` in the panel host.",
+""
+]
+},
+{
+"id": "C-01",
+"sev": "Blocker",
+"cells": [
+"`core-common/src/main/kotlin/ai/passioncode/fabricvr/common/NetworkPolicy.kt:35`",
+"`requireReachable` derives the host with `substringBefore('/').substringBefore(':')`, which reads the **userinfo** of a URL as the host. A URL whose userinfo looks like `ip:port` passes the private-address test while a real URL parser resolves it to a public host.",
+"The person pastes `http://192.168.0.5:8080@evil.invalid/` as the cloud STT endpoint (a plausible \"use our fast endpoint\" instruction — it reads as a LAN address). The policy answers ALLOWED; OkHttp sends `POST /v1/audio/transcriptions` to `evil.invalid` **over plain http** carrying `Authorization: Bearer <cloud key>` (`CloudTranscriptionClient.kt:72-74`) and the WAV of the person's voice. Same hole for `http://10.0.0.1:1@attacker.invalid/`. This is the one failure `CloudTranscriptionClient`'s own KDoc (`:34`) says the class must not have.",
+"Parse with `okhttp3.HttpUrl.parse(url)` (already on the classpath in both modules) and test `url.host`, `url.scheme`, and reject any URL where `url.username`/`url.password` is non-empty. Keep the private-range test, applied to the parsed host.",
+"`python3` probe run 2026-09-20: the current logic returns ALLOWED for `http://192.168.0.5:8080@evil.invalid/` and `http://10.0.0.1:1@attacker.invalid/`, while `urlparse` gives `hostname=evil.invalid, username=192.168.0.5, password=8080`. Add these two URLs plus `http://127.0.0.1@evil.invalid/` to `NetworkPolicyTest` and `RemoteWhisperClientUrlTest`.",
+""
+]
+},
+{
+"id": "C-02",
+"sev": "High",
+"cells": [
+"`app/.../ImmersiveActivity.kt:46,146-163`; `app/.../SpatialPanelOwners.kt:42-43`",
+"The `OnBackPressedDispatcher` handed to the composition is **never driven**. Nothing calls `onBackPressedDispatcher.onBackPressed()`, `ImmersiveActivity` does not override `onBackPressed()`, and the manifest sets no `android:enableOnBackInvokedCallback`. The owner exists only so navigation-compose stops throwing.",
+"In the Space, Back goes to `Activity.onBackPressed()` → default `finish()`. Two consequences on a first session: navigating Today → Settings → Back does **not** pop the back stack (nothing reaches `NavHost`), and leaving with Back finishes the activity **without** the `returnToPanel()` PendingIntent, so Home is never told to bring the 2D panel back. `onUnhandledBack = { returnToPanel() }` is dead for the Back path; only the explicit *Leave* button reaches it. Asked directly: `finish()` runs **once** today. It would run twice only if someone delegates `onBackPressed()` to the dispatcher *and* leaves `super.onBackPressed()` in place — the second call is a no-op, but the PendingIntent would already have been sent, so the symptom would be a correct return with a redundant finish, not a crash.",
+"Override `onBackPressed()` in `ImmersiveActivity` to call `owners.onBackPressedDispatcher.onBackPressed()` and **not** call super; add `android:enableOnBackInvokedCallback=\"true\"` to `<application>` so the predictive path is the one exercised.",
+"`grep -rnE 'onBackPressed\\",
+"onBackInvoked' app/src/main` returns only the KDoc at `SpatialPanelOwners.kt:21` and the field at `:42` — no call site, no override. Then an instrumented test that presses Back in the Space and asserts the panel activity is resumed.",
+""
+]
+},
+{
+"id": "C-03",
+"sev": "High",
+"cells": [
+"`app/.../Graph.kt:71-79,131-149`; `app/.../ui/VoiceViewModel.kt:42,131`; `app/.../ui/NotesViewModel.kt:186`",
+"`Graph.sttEngine()` and `Graph.withEngine()` are called from `viewModelScope` (`Dispatchers.Main.immediate`) and do blocking work on the main thread: five Keystore decrypts, a `SharedPreferences` read, and — through `localEngine()` / the `finally` at `:147` — `WhisperEngine.close()`, which is `runBlocking(dispatcher)` around `whisper_free` of a 190–574 MB native context.",
+"First dictation on a fresh install: `settings` is created on Main, `secretKey()` attempts a **StrongBox** AES-256 generation (`SecureSettings.kt:131-138`) and falls back — seconds of main-thread work before the meter appears. Re-transcribing a note with a different model (`NotesViewModel.kt:186`) frees a 574 MB context on Main; if a transcription is already queued on the whisper thread, `runBlocking` waits for it — up to the 14.5 s the module doc records — which is an ANR, not jank.",
+"Wrap the whole of `sttEngine()`/`withEngine()`/`close()` in `withContext(Dispatchers.IO)`, or make `Graph.settings` reads suspend. `WhisperEngine.close()` should be `suspend` (or post-and-forget) rather than `runBlocking`.",
+"`docs/modules/feature-stt.md` records 14.5 s warm / ≈2.1 s model load for the *small* model; `WhisperModel.kt:25` offers a 574 MB one. Instrument with `StrictMode.ThreadPolicy.detectAll().penaltyLog()` in `FabricVrApp` and drive one dictation.",
+""
+]
+},
+{
+"id": "C-04",
+"sev": "High",
+"cells": [
+"`core-common/.../SecureSettings.kt:65-83`",
+"`get()` wraps the whole decrypt in `runCatching` and, on **any** throwable, deletes the stored ciphertext. It cannot tell \"the key was replaced\" from a transient `KeyStoreException`, keystore-busy, or a device still finishing boot.",
+"One transient Keystore error while the assistant reads `KEY_OPENROUTER_API_KEY` permanently destroys it; the person must find and paste the key again. The same store holds the cloud STT key and every non-secret setting (`KEY_WHISPER_SERVER_URL`, `KEY_STT_PROVIDER`, `KEY_STT_MODEL`, `KEY_STT_LANGUAGE`), so a keystore reset silently resets the app's whole configuration, one key per read. Only the OpenRouter key's loss is surfaced (`SettingsViewModel.kt:93-97` watches that one key).",
+"Delete only on `AEADBadTagException` / `javax.crypto.BadPaddingException` / `KeyPermanentlyInvalidatedException`. On anything else, return null, publish the key as *unreadable this time*, and keep the bytes. Move the non-secret settings out of the encrypted store, or at least do not destroy them.",
+"Unit test with a `SecureSettings` whose cipher throws `KeyStoreException` once: assert the value is still present on the next `get()`. Today the second `get()` returns null and `prefs` no longer holds the key.",
+""
+]
+},
+{
+"id": "C-05",
+"sev": "High",
+"cells": [
+"`feature-stt/.../AudioRecorder.kt:60-73`",
+"`recorder.read()` is only acted on when `read > 0`. Every negative return — `ERROR_INVALID_OPERATION` (-3), `ERROR_DEAD_OBJECT` (-6), `ERROR` (-1) — falls through and the `while (isActive)` loop spins immediately.",
+"The Quest's microphone is contended (the shell's voice command, another app, Meta Virtual Display) or the record session dies mid-recording. `read()` returns -6 forever: one core at 100%, the meter frozen at its last value, the UI still showing *Recording*, and when the person presses stop the buffer is short so they are told \"nothing was heard\" — the only failure mode the product must not have on the main path. No audio focus is requested and no `AudioManager` state is consulted anywhere in the module.",
+"Treat `read < 0` as terminal: `close(SttException(AppError.SttFailed(\"audio-record\", …)))` with the error code, after a small bounded retry for `ERROR_INVALID_OPERATION`. Consider `AudioRecord.Builder().setAudioAttributes(...)` and `setPrivacySensitive(true)`.",
+"`grep -n 'read <\\",
+"ERROR_DEAD_OBJECT\\",
+"requestAudioFocus' feature-stt/src/main/kotlin/…/AudioRecorder.kt` — no hit. Add a fake recorder returning -6 and assert the flow completes with a failure instead of spinning.",
+""
+]
+},
+{
+"id": "C-06",
+"sev": "High",
+"cells": [
+"`app/.../ui/VoiceViewModel.kt:108-121,117`; `app/.../ImmersiveActivity.kt:63-66`; `app/.../SpatialPanelOwners.kt:54-57`",
+"Nothing stops a recording or a transcription on a lifecycle event, and the scratch WAV has no owner until a note adopts it. `owners.onDestroy()` clears the ViewModelStore, which cancels `viewModelScope` — but the in-flight `whisper_full` is a blocking JNI call that cancellation cannot interrupt, and `lastAudioPath` dies with the view model.",
+"The person dictates in the Space and leaves while it says *Transcribing* (the module doc measures ≈14.5 s, so this is a normal thing to do). The note is never created. The WAV written at `:117` stays in `filesDir/audio/<millis>.wav` — no note references it, `cancel()` is never called, and **nothing ever sweeps that directory** — so recordings of the person's voice accumulate in app storage, unreachable and undeletable through the app. Meanwhile the whisper thread finishes the job on four cores against a dead activity. It is short of Blocker only because the audio is stranded rather than erased.",
+"Give `VoiceViewModel` an explicit teardown that deletes an unadopted scratch WAV, pass an `abort_callback` through the JNI so `whisper_full` can be stopped, and sweep `filesDir/audio` for files older than a session on startup.",
+"`grep -rn 'audioDir\\",
+"filesDir, \"audio\"' app/src/main` shows one writer (`:117`) and one delete-on-cancel (`:201`); no listing, no sweep. Then: record in the Space, leave mid-transcribe, `adb shell run-as … ls files/audio`.",
+""
+]
+},
+{
+"id": "C-07",
+"sev": "Medium",
+"cells": [
+"`feature-stt/src/main/cpp/fabricvr_whisper.cpp:112-117`",
+"`env->GetStringUTFChars(language, nullptr)` can return `nullptr` (OOM, pending exception); `lang.assign(l)` is then `std::string::assign(const char*)` on a null pointer — undefined behaviour, in practice a SIGSEGV that the surrounding `catch` cannot see.",
+"Under memory pressure — which is exactly the large-turbo + beam-5 case of C-09 — the app dies inside the JNI bridge with a native crash rather than failing one note.",
+"`if (l != nullptr) { lang.assign(l); env->ReleaseStringUTFChars(language, l); }`.",
+"`javap`/read: the null check present for `model_path` at `:24-26` is absent here. A JNI unit test cannot force this; the asymmetry with `initContext` is the evidence.",
+""
+]
+},
+{
+"id": "C-08",
+"sev": "Medium",
+"cells": [
+"`feature-stt/src/main/cpp/fabricvr_whisper.cpp:70,122-123,146-152`",
+"`GetFloatArrayElements` is released on exactly one path (`:123`). If anything between `:70` and `:123` throws — `std::bad_alloc` from `std::string`, or from inside `whisper_full` — both `catch` blocks return `nullptr` **without** `ReleaseFloatArrayElements`.",
+"A long dictation at 16 kHz is a multi-megabyte float array. A `bad_alloc` inside `whisper_full` leaks it on precisely the path where memory had already run out, so the next attempt is likelier to fail the same way. (The early returns at `:66-67` and `:74` are correct — they precede or handle the acquisition; `:139-141` is after the release.)",
+"RAII: a small guard struct whose destructor calls `ReleaseFloatArrayElements(audio, samples, JNI_ABORT)`, constructed at `:70`.",
+"Read the file: `ReleaseFloatArrayElements` appears once, at `:123`, inside the happy path only.",
+""
+]
+},
+{
+"id": "C-09",
+"sev": "Medium",
+"cells": [
+"`feature-stt/.../WhisperEngine.kt:26,104`; `WhisperModel.kt:24-25`; `cpp/fabricvr_whisper.cpp:80-85`",
+"`beamSize` defaults to 5 and is never wired to a setting; it applies identically to the 32 MB tiny model and the 574 MB `large-v3-turbo-q5_0`. Nothing checks free memory before `whisper_init_from_file_with_params`.",
+"The person picks large-turbo in Settings (offered at `SettingsViewModel.kt:139`), downloads 574 MB, and dictates. Five decoder beams on top of 574 MB of weights, inside a process that is also holding a 47.8 MB Spatial SDK renderer and an OpenXR swapchain, is where the low-memory killer arrives — and the failure surface is C-07/C-08.",
+"Scale `beamSize` by model (5 for tiny/base/small, 1–2 for medium/large-turbo), or expose it as the \"speed\" setting the KDoc at `feature-stt.md` already anticipates. Refuse the large models when `ActivityManager.MemoryInfo` says there is no room, with a message.",
+"`grep -rn 'beamSize' feature-stt app/src/main` — the only assignment is the constructor default. No `ActivityManager`/`MemoryInfo` reference exists in the tree.",
+""
+]
+},
+{
+"id": "C-10",
+"sev": "Medium",
+"cells": [
+"`feature-stt/.../WhisperEngine.kt:31,99-101`",
+"The whisper thread is created with `Thread(r, \"whisper\")` at **default priority** and `defaultThreads()` returns the same number in the 2D panel and inside the Space. There is no path by which the immersive activity tells the engine to back off.",
+"Four whisper threads at default priority compete with the OpenXR render and compositor threads while the Space is drawing. The project's own measurement (`docs/modules/feature-stt.md`) records the same work taking **2.5× longer after six minutes** of continuous inference — i.e. the device is already thermally limited — and that benchmark was taken without a scene rendering. In the Space the person gets both the stutter and the longer wait.",
+"`Process.setThreadPriority(THREAD_PRIORITY_BACKGROUND)` inside the thread factory, and let `ImmersiveActivity` publish \"immersive is resumed\" so `defaultThreads()` drops by one or two there. Make both a measurement before shipping either.",
+"`grep -rn 'setThreadPriority\\",
+"THREAD_PRIORITY' feature-stt app/src/main` — no hit. Re-run the module's own bench with the Space open.",
+""
+]
+},
+{
+"id": "C-11",
+"sev": "Medium",
+"cells": [
+"`app/.../SpatialPanelOwners.kt:45-57`",
+"Three gaps in the hand-rolled owners: (a) there is no `onStop` → the registry never returns to `CREATED`; (b) `performRestore(null)` is called and `performSave` is never called, so the registry restores nothing and saves nothing, ever; (c) `viewModelStore.clear()` runs *before* `super.onDestroy()`, while the SDK's panel teardown has not happened.",
+"(a) `collectAsStateWithLifecycle` and `repeatOnLifecycle` default to `STARTED`, so every flow in the Space keeps collecting while the activity is stopped — the headset off the head, or the person in another app. (b) `rememberSaveable` in `SettingsScreen` (six fields, `:51-56`) and `ChatScreen.kt:41`, and the nav back stack, are lost on any panel rebuild; providing the registry buys nothing but the absence of a crash. (c) a recomposition between the clear and the teardown builds a fresh view model into a store the activity has finished with.",
+"Drive `onStart`/`onStop` from the activity too; call `savedState.performSave(outState)` from `onSaveInstanceState` and `performRestore(savedInstanceState)` in `onCreate`; clear the store after `super.onDestroy()`.",
+"`grep -n 'performSave\\",
+"onStop\\",
+"onStart' app/src/main/kotlin/ai/passioncode/fabricvr/{ImmersiveActivity,SpatialPanelOwners}.kt` — no hit.",
+""
+]
+},
+{
+"id": "C-12",
+"sev": "Medium",
+"cells": [
+"`app/src/main/AndroidManifest.xml:65`; `app/.../ImmersiveActivity.kt:40,72,86-87`",
+"`ImmersiveActivity`'s `configChanges` omits `density`, `smallestScreenSize`, `fontScale` and `layoutDirection`, which `PanelActivity` (`:45`) does declare. The `pending` permission callback is a plain field on the activity instance.",
+"A configuration change the activity does not declare recreates it mid-permission-dialog. `onRequestPermissionsResult` then arrives on a new instance with `pending == null` (`:86`), the result is dropped silently, and the capture button stays on *NeedsPermission* with no explanation. The panel activity, which uses the androidx result API, does not have this hole — so the Space behaves worse than the panel on a first-run path.",
+"Either match `PanelActivity`'s `configChanges` list, or re-check `checkSelfPermission` in `onResume` and drive the view model from that rather than from a retained lambda.",
+"Compare the two `configChanges` attributes in the manifest. Then `adb shell cmd uimode`/font-scale change during the prompt.",
+""
+]
+},
+{
+"id": "C-13",
+"sev": "Medium",
+"cells": [
+"`app/build.gradle.kts:19,32-55`; `keystore.properties.sample`",
+"`assembleRelease` exits 0 and produces `app-release-unsigned.apk` (77.9 MB, measured) when `keystore.properties` is absent; `versionCode` silently defaults to 1; the warning is emitted from `logger.lifecycle` at **configuration** time, so it prints on every Gradle invocation including debug builds and IDE sync.",
+"Nothing distinguishes \"the release build succeeded\" from \"the release build produced something no headset will install\" (`INSTALL_PARSE_FAILED_NO_CERTIFICATES`). A rebuild without `-PversionCode=` produces versionCode 1, which a headset refuses as a downgrade. A warning that prints on every build is a warning nobody reads.",
+"Add a `checkReleaseSigning` task that fails `assembleRelease` unless `-PallowUnsigned` is passed; fail when `versionCode` is defaulted and the build type is release; move the message to a task action so it prints only for the release task.",
+"`ls -la app/build/outputs/apk/release/` → `app-release-unsigned.apk`; `cat app/build/outputs/apk/release/output-metadata.json` for the versionCode actually stamped.",
+""
+]
+},
+{
+"id": "C-14",
+"sev": "Medium",
+"cells": [
+"repository root (`.github` does not exist)",
+"There is no CI. `scripts/check-secrets.sh`, `scripts/check-docs.sh` and the JVM suites run only when a person remembers to run them.",
+"The secret gate that was found broken on 2026-09-19 (its own header records that ten planted credentials passed) was broken for an unknown period precisely because nothing ran it on a schedule. Every finding in this report that a test would catch is currently caught by nobody.",
+"A single workflow: `./gradlew test`, `bash scripts/check-secrets.sh`, `bash scripts/check-docs.sh`, and `./gradlew :app:assembleRelease` with the signing gate of C-13. The NDK build needs a runner with the SDK; split it if it is slow.",
+"`ls -la .github` → `No such file or directory` (run 2026-09-20).",
+""
+]
+},
+{
+"id": "C-15",
+"sev": "Medium",
+"cells": [
+"`scripts/check-secrets.sh:23-25,36-37`",
+"The pattern set does not contain the shape of the key this app is most likely to hold. Missing: `gsk_[A-Za-z0-9]{40,}` (**Groq** — `CloudTranscriptionClient.SUGGESTED_BASE_URL` is `https://api.groq.com/openai`, so a Groq key is *the* key a contributor will paste), `sk-proj-[A-Za-z0-9_-]{20,}` and legacy OpenAI `sk-[A-Za-z0-9]{48}`, AWS secret access keys (only the `AKIA` id is covered), and a generic `Authorization: Bearer <40+ chars>`. It also exempts all of `docs/evidence/audits/` and scans only **tracked** files — not the index, not untracked files about to be added, not history.",
+"Someone pastes a working Groq key into a runbook while debugging cloud STT, the gate says `OK: secret scan`, and the key ships to GitHub. The script's own header documents a near-identical failure from three days earlier.",
+"Add the four shapes above. Narrow the audits exemption to a marker line rather than the whole directory. Add a `--staged` mode that reads `git diff --cached` so it can be a pre-commit hook.",
+"Plant `gsk_` + 40 chars in a tracked doc and run the script: it prints `OK` today. The canary self-test at `:29-34` only proves the *engine* runs, not that the pattern set is complete.",
+""
+]
+},
+{
+"id": "C-16",
+"sev": "Medium",
+"cells": [
+"`app/.../Graph.kt:97,119-121`; `feature-stt/.../RemoteWhisperClient.kt:27-45` vs `CloudTranscriptionClient.kt:45-47`",
+"The two HTTP clients disagree about where the cleartext rule lives. `CloudTranscriptionClient` enforces it **in its constructor**; `RemoteWhisperClient` only offers a static `validateBaseUrl` and its constructor accepts anything. `Graph` builds `RemoteWhisperClient(serverUrl)` straight from storage without calling it.",
+"The rule is enforced only on the one path that writes the setting (`SettingsViewModel.kt:167`). Any other route into `prefs` — a future import/restore, a debug hook, a regression in the view model — sends the recording to whatever is stored, with no second line of defence. This also makes C-01's bypass permanent once stored.",
+"Move the check into `RemoteWhisperClient`'s constructor, exactly as `CloudTranscriptionClient` does, and let `Graph` map the refusal to `FailingEngine(AppError.InsecureUrl)`.",
+"`grep -rn 'validateBaseUrl\\",
+"requireReachable' --include='*.kt' .` — the only production call sites are `SettingsViewModel.kt:147,167`, `CloudTranscriptionClient.kt:45` and `OpenRouterClient.kt:40`. `Graph.kt:97` and `:121` construct without one.",
+""
+]
+},
+{
+"id": "C-17",
+"sev": "Low",
+"cells": [
+"`AndroidManifest.xml:27-34`; `app/src/main/res/values/strings.xml:85`",
+"`usesCleartextTraffic=\"true\"` is app-wide with no `networkSecurityConfig`; the split is policed only in Kotlin. The one sentence the person sees — \"https anywhere, or http to a device on your own network\" — states the rule but never says that an API key and a recording will travel **unencrypted** to the LAN host they typed.",
+"Defensible as a platform setting (the allowed hosts are user-typed RFC1918 addresses, which a network-security-config cannot express as a range), but it means C-01 and C-16 have no platform backstop. And a person entering a cloud STT endpoint over http on their LAN is not told their Bearer key is in the clear.",
+"Keep the platform flag; add a `networkSecurityConfig` that pins the *known* hosts (`api.groq.com`, `openrouter.ai`, `huggingface.co`) to TLS so a mistake there cannot go cleartext. Add one line to the hint when the entered URL is `http://`: the key travels unencrypted.",
+"The manifest comment at `:22-26` names `DEC-0005`; the strings file has one hint line and no warning string.",
+""
+]
+},
+{
+"id": "C-18",
+"sev": "Low",
+"cells": [
+"`.gitmodules:4`; `feature-stt/src/main/cpp/CMakeLists.txt:4`",
+"The gitlink **is** correct — `git submodule status` gives `927cfce3… (v1.9.4)`, which matches the comment. But `.gitmodules` declares `branch = master`, so `git submodule update --remote` moves whisper.cpp to master's tip without touching anything a reviewer reads.",
+"A routine \"update submodules\" silently changes the native engine under a build that documents itself as pinned to v1.9.4, and the JNI bridge compiles against whatever `whisper_full_params` master now has.",
+"Either delete the `branch` line or set `branch = v1.9.4`; add the expected SHA to the CMake `FATAL_ERROR` check.",
+"`git submodule status` → `927cfce34f31707e17f2bff35c349632fb9e2c3a third_party/whisper.cpp (v1.9.4)`.",
+""
+]
+},
+{
+"id": "C-19",
+"sev": "Low",
+"cells": [
+"`gradle/wrapper/gradle-wrapper.properties:3,6`; absence of `gradle/verification-metadata.xml`",
+"The wrapper distribution **is** pinned (`distributionSha256Sum`) with `validateDistributionUrl=true` — that half is right. Dependencies are not: no dependency verification metadata, no lockfiles, and `spatialsdk = \"0.14.0\"` etc. resolve from `mavenCentral()`/`google()` unverified on every clean build.",
+"A compromised or republished artifact enters a build that already loads a 47.8 MB native SDK blob and a 15 MB native whisper library into the same process as the microphone.",
+"`./gradlew --write-verification-metadata sha256 help`, commit the result. Cheap, and it also documents what the build actually pulls.",
+"`ls gradle/` → `libs.versions.toml`, `wrapper/` only. Also worth one command: compare `distributionSha256Sum` against `https://services.gradle.org/distributions/gradle-8.13-bin.zip.sha256` — I did not have network access to confirm it, so treat it as pinned-but-unverified.",
+""
+]
+},
+{
+"id": "C-20",
+"sev": "Low",
+"cells": [
+"`AndroidManifest.xml:5,36`",
+"`android.hardware.vr.headtracking` is `required=\"false\"` and `com.oculus.supportedDevices` is a **store** filter, not an install filter. `android.hardware.microphone` is not declared at all (it is implied by the permission, as required).",
+"The APK installs on an ordinary Android 14 phone, where `VRFeature` has nothing to attach to and the immersive activity's intent category is never matched — a support question, not a crash.",
+"`required=\"true\"` for headtracking on a Quest-only app; the hand-tracking `required=\"false\"` at `:15` is correct as written and its comment explains why.",
+"Read the manifest; the comment at `:7-14` documents the hand-tracking half and is right about it.",
+""
+]
+},
+{
+"id": "C-21",
+"sev": "Low",
+"cells": [
+"`scripts/install-on-quest.sh:13,16`",
+"The script installs `app/build/outputs/apk/debug/app-debug.apk` and nothing else; `DEVICE` falls back to the first `adb devices` line, which may be an emulator or a phone. There is no documented way to install a release build anywhere in the repo.",
+"The release artifact — the one this axis is auditing — has no install path, which is part of why it has never been run on a headset.",
+"Accept `BUILD=release",
+"debug`, refuse a device whose `ro.product.manufacturer` is not Oculus, and print the signature status of the APK before installing.",
+"Read the script; `grep -rn 'release' scripts/` returns nothing.",
+""
+]
+},
+{
+"id": "C-22",
+"sev": "Low",
+"cells": [
+"`app/.../ImmersiveActivity.kt:116,170-172`",
+"`composedAtLeastOnce` is a `@Volatile` companion field set to `true` inside the composition and **never reset**.",
+"Once any launch in a process sets it, a later `ImmersiveLaunchTest` in the same process asserts a fact established by an earlier test. The marker's stated purpose — telling \"the Space opened\" from \"the shell deferred the launch\" — is defeated for every run after the first.",
+"Reset it to `false` in `onCreate` before the panel can compose, or make it a counter the test snapshots before launching.",
+"Read the field: one write (`:116`), no reset.",
+""
+]
+},
+{
+"id": "C-23",
+"sev": "Low",
+"cells": [
+"`core-common/.../NetworkPolicy.kt:19`",
+"`host.endsWith(\".local\")` allows cleartext to any name ending in `.local` — including `example.com.local`, which a DNS search domain can resolve off the machine — and IPv6 loopback `http://[::1]:8080/` is **refused** (the `substringBefore(':')` yields `[`).",
+"Minor next to C-01: the `.local` case needs a resolver configured to chase it, and the IPv6 case fails closed.",
+"Require exactly one label before `.local` for the mDNS case; handle bracketed IPv6 literals when the parser is replaced per C-01.",
+"Same `python3` probe: `http://example.com.local/` → ALLOWED, `http://[::1]:8080/` → REFUSED.",
+""
+]
+},
+{
+"id": "D-01",
+"sev": "Blocker",
+"cells": [
+"SCN-003",
+"`TodayScreen.kt:197-218`; state at `NotesViewModel.kt:57,113,130`",
+"Tag chips and tag filtering have no interface in either host; the view model side is complete and unreachable",
+"Person types `#idea` in three notes, returns to Today, and has no way to filter by it. Steps 2-4 of SCN-003 cannot be performed at all",
+"Render `state.tags` as a `FilterChip` row above the list, wired to `selectTag`, selected from `state.selectedTag`",
+"A UI test that types `#idea`, returns to Today, taps the chip and asserts the list narrows, then taps again and asserts it widens",
+""
+]
+},
+{
+"id": "D-02",
+"sev": "Blocker",
+"cells": [
+"SCN-013 (alt)",
+"`TodayScreen.kt:287`, `ChatScreen.kt:58`; mapping `UiStateMapper.kt:16`",
+"`UiAction.OPEN_APP_SETTINGS` opens the app's own Settings screen, which cannot grant a permission",
+"Person hard-denies the microphone, taps the button labelled \"App settings\", lands on a screen of API keys and vault paths, and can never dictate again on that install",
+"Route `OPEN_APP_SETTINGS` to `Intent(ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts(\"package\", packageName, null))`; it must be host-supplied, since `ImmersiveActivity` is not a `ComponentActivity`",
+"Deny twice on a device, tap the button, assert the OS app-info page opens; assert the same from inside the Space",
+""
+]
+},
+{
+"id": "D-03",
+"sev": "Blocker",
+"cells": [
+"SCN-014",
+"`Graph.kt:85-101`",
+"Choosing *Cloud service* (or *My whisper server*) with no key/URL silently transcribes on the device and reports nothing — the exact failure SCN-014's error clause forbids",
+"Person selects Cloud, forgets the key, dictates, gets a transcript, and believes it came from the cloud model they chose. Also: a person who *wanted* local privacy cannot tell the two apart afterwards",
+"Return `FailingEngine(AppError.NoApiKey)` / `RemoteStt(0, \"no server configured\")` as the remote rather than `null`, so `SttRouter` records a real `fallbackReason` and the UI can say it",
+"`SttRouterTest` case: CLOUD + blank key → the transcript carries `LOCAL_FALLBACK` and a non-null `fallbackReason`; a UI assertion that the note row says so",
+""
+]
+},
+{
+"id": "D-04",
+"sev": "High",
+"cells": [
+"SCN-013",
+"`VoiceViewModel.kt:30,145`; `TodayScreen.kt:306,318,337`",
+"`VoiceState.Allowed` is handled by no branch; granting the microphone produces a silent no-op and a third press is required",
+"First run: grant the microphone, watch nothing happen, press *Record* again. Contract says \"the recording starts immediately, without re-pressing *Record*\"",
+"Either drop `Allowed` and call `start()` from `onPermissionResult(granted = true)`, or handle it in `RecordControl` and auto-start",
+"`VoiceViewModelStateTest`: `onPermissionResult(true, false)` leaves the state in `Recording`, not `Allowed`",
+""
+]
+},
+{
+"id": "D-05",
+"sev": "High",
+"cells": [
+"SCN-004, SCN-006, SCN-007",
+"`TodayScreen.kt:288,291` vs `VoiceViewModel.kt:178-183`",
+"The *Retry* button on the voice banner calls `cancel()`, which clears the message and **deletes the recording** (`VoiceViewModel.kt:201`); `retryLast()` exists and is never called",
+"Transcription fails on a 3-minute thought; the banner says \"Couldn't transcribe that. The recording is kept.\"; the person taps *Retry*; the recording is deleted and nothing is retried. The message is a lie written by the button beside it",
+"Wire `UiAction.RETRY` to `voiceViewModel.retryLast()`; keep `cancel()` behind the ✕ only",
+"Unit test: `Failed` → `retryLast()` re-enters `Transcribing` with `lastPcm` intact; `cancel()` alone deletes the wav",
+""
+]
+},
+{
+"id": "D-06",
+"sev": "High",
+"cells": [
+"SCN-004",
+"`VoiceViewModel.kt:139,196-204`; `TodayScreen.kt:281-292`",
+"On an engine failure the audio is **not** offered as a note without a transcript, as the scenario promises — the only exit destroys it",
+"The whisper context fails to load after a long dictation; the words are gone and so is the recording",
+"On `Failed` after a successful capture, offer *Keep as a note* that calls `createVoiceNote` with an empty transcript and the kept `audioPath`",
+"A test that fails the engine and asserts a note exists afterwards with `audioPath != null` and `transcript == null`",
+""
+]
+},
+{
+"id": "D-07",
+"sev": "High",
+"cells": [
+"SCN-006",
+"`UiStateMapper.kt:21-22`; `core-common/…/strings.xml:10`",
+"The model prompt names neither the model nor its size nor that text notes work meanwhile; one tap then starts a 190 MB download",
+"On metered or slow headset Wi-Fi, a person taps *Download* without being told what it costs. `AppError.ModelMissing` carries the name and the mapper drops it",
+"Pass `error.model` and the megabytes into a format string; add the \"text notes work meanwhile\" line beside the button",
+"`UiStateMapperTest` asserting the args reach the message; a screenshot of the first-run banner",
+""
+]
+},
+{
+"id": "D-08",
+"sev": "High",
+"cells": [
+"SCN-001",
+"`TodayScreen.kt:117-139`; dead code `NotesViewModel.kt:150`; stale test `PanelSmokeTest.kt:21`",
+"*New note* does not exist; the scenario's only entry point is gone and its \"write instead\" role in SCN-013 with it",
+"A person who refuses the microphone is told nothing about writing and has no button that starts a note. `PanelSmokeTest` asserts both \"Hold to record\" and \"New note\" and would fail on this commit",
+"Restore a *New note* action calling `createNote()` then navigating to the editor — or rewrite SCN-001, SCN-013 and the `today_empty` copy to match a dictation-only product. Fix the smoke test either way",
+"`PanelSmokeTest` green against the strings actually rendered",
+""
+]
+},
+{
+"id": "D-09",
+"sev": "High",
+"cells": [
+"SCN-015",
+"`NotesViewModel.kt:230-238`; `Vault.kt:110-114,87-92`; `NotesRepository.kt:89-92`",
+"Undo restores the row and the Markdown but **not the audio**, and rewrites `updatedAt`; the restored note keeps a dangling `audioPath` that still shows *Transcribe again*",
+"Delete a voice note by accident, undo, then tap *Transcribe again* → `FileNotFoundException` surfaces as a storage error. The recording is gone for good",
+"Hold the audio bytes (or defer the vault delete behind the undo window) and restore them in `undoDelete`; preserve `updatedAt` on an undo upsert",
+"`VaultMirrorTest` + a view-model test: delete → undo → the `.wav` exists and `updatedAt` is unchanged",
+""
+]
+},
+{
+"id": "D-10",
+"sev": "High",
+"cells": [
+"SCN-014, SCN-005",
+"`Graph.kt:105-117` (`?: CloudTranscriptionClient.SUGGESTED_BASE_URL`, `CloudTranscriptionClient.kt:131` = `https://api.groq.com/openai`)",
+"*Transcribe again → Cloud service* with a key saved but **no address** posts the recording to Groq — an endpoint the person never named",
+"The person set a key once while exploring, later re-runs an old recording \"with the better model\", and the audio leaves the headset to a third party they did not choose. This is the privacy gap the whole provider chip exists to close",
+"Require an explicit saved address: return `FailingEngine(AppError.NoApiKey)` (or a new `NoEndpoint`) when `KEY_CLOUD_STT_URL` is blank, rather than defaulting",
+"A test asserting `withEngine(CLOUD, …)` with a blank URL never constructs a client; `CloudTranscriptionClientTest` for the refusal path",
+""
+]
+},
+{
+"id": "D-11",
+"sev": "High",
+"cells": [
+"SCN-015",
+"`NotesViewModel.kt:232`",
+"`justDeleted` is cleared **before** the restoring upsert is attempted, so a failed undo loses the note entirely — the opposite of the scenario's \"the note is still in hand\"",
+"Storage is momentarily unavailable; undo fails; the banner says why and there is nothing left to press",
+"Clear `justDeleted` only inside `onSuccess`",
+"Unit test: an upsert that fails leaves `justDeleted` non-null",
+""
+]
+},
+{
+"id": "D-12",
+"sev": "Medium",
+"cells": [
+"SCN-002",
+"`NotesViewModel.kt:59-60,119-128`; `TodayScreen.kt:122-126`",
+"Neither the date header nor today's card is rendered; `state.today`, `state.dayLabel` and the midnight ticker (`:42-49,92-97`) all feed nothing",
+"The daily note appears as a row titled `2026-09-20` among the others, indistinguishable and unexplained, and sinks below newer notes on any later day",
+"Render the date as the header and today's note as the first card, pinned above the `LazyColumn`",
+"A UI test asserting the first card carries today's date on a fresh day and after a dictation",
+""
+]
+},
+{
+"id": "D-13",
+"sev": "Medium",
+"cells": [
+"SCN-005, SCN-015",
+"`TodayScreen.kt:212-214` discards `RetranscribeResult` (`NotesViewModel.kt:52,207`)",
+"After *Transcribe again*, the screen says nothing — and when the body was left alone because it had been edited, the person sees an apparent no-op",
+"Person fixes a misheard word by hand, re-runs with a bigger model, and concludes the feature is broken. `state_retranscribed` / `state_retranscribed_kept` (`strings.xml:110-111`) are written and orphaned",
+"Surface the result as a short confirmation line, reusing the two existing strings",
+"A UI test for the `TranscriptOnly` branch asserting the \"your edited text was kept\" line appears",
+""
+]
+},
+{
+"id": "D-14",
+"sev": "Medium",
+"cells": [
+"SCN-007",
+"`TodayScreen.kt:395-403`; `NoteEditorScreen.kt:160-169`; `Note.kt:19`",
+"The fallback is invisible on the list, printed as a raw enum (`local_fallback`) in the editor, and `fallbackReason` is read nowhere",
+"The whisper server is down for a week; every note quietly comes from the small local model and nothing ever says so. The three human strings exist (`strings.xml:105-107`) and are orphaned",
+"Render `SttSource` through those strings on both surfaces and show `fallbackReason` as the one-line notice the scenario names",
+"A UI test with a failing remote asserting the note row reads \"this headset (fallback)\" and carries the server's status",
+""
+]
+},
+{
+"id": "D-15",
+"sev": "Medium",
+"cells": [
+"SCN-004 (alt)",
+"`VoiceViewModel.kt:97,101-104`; callers `TodayScreen.kt:157`, `NoteEditorScreen.kt:98`",
+"There is no *Cancel* while recording; `stopAndTranscribe(false)` is dead code",
+"A mis-aimed ray starts a recording; the only way out is *Stop recording*, which transcribes it and commits a junk note that must then be deleted",
+"Add a *Cancel* beside (not under) the record button while `Recording`, calling `stopAndTranscribe(false)`",
+"A test that `Recording` → cancel leaves no note and deletes the wav",
+""
+]
+},
+{
+"id": "D-16",
+"sev": "Medium",
+"cells": [
+"SCN-004, unnamed state",
+"`VoiceViewModel.kt:40` (`Graph.recorder`, a process singleton at `Graph.kt:62`); two independent `viewModel()` instances at `TodayScreen.kt:84` and `NoteEditorScreen.kt:51`",
+"Two `VoiceViewModel`s share one `AudioRecorder`; nothing prevents a second dictation starting while the first is in flight",
+"Start a dictation on Today, navigate into a note mid-transcription, press *Record* there: a second `AudioRecord` opens against the same device, and two `Ready` states race to commit",
+"Make the recorder single-flight (a mutex or a shared capture state in `Graph`), or hoist one `VoiceViewModel` to the activity scope so both screens see one state",
+"A test that `start()` on a second view model while the first is `Recording` returns a busy state rather than opening a device",
+""
+]
+},
+{
+"id": "D-17",
+"sev": "Medium",
+"cells": [
+"unnamed state",
+"`TodayScreen.kt:309-342`; `VoiceViewModel.kt:107`",
+"`Transcribing` has no progress, no elapsed time and no cancel, for 1.3–3.4× the recording length",
+"A three-minute thought on the medium model is four to ten minutes of a disabled button reading \"Transcribing…\". A person in a headset will assume the app hung and force-quit it",
+"Show the elapsed transcription time and a *Cancel*; the `viewModelScope` job is already cancellable",
+"A UI test asserting a running counter and a cancel that returns to `Idle`",
+""
+]
+},
+{
+"id": "D-18",
+"sev": "Medium",
+"cells": [
+"SCN-012, unnamed state",
+"`FabricApp.kt:40-41`; `SpatialPanelOwners.kt:40`",
+"Each host owns its own `NavHost` and `ViewModelStore` and always starts at Today; no state crosses the boundary",
+"Enter the Space with a note open → land on Today. Enter the Space **while transcribing** → the panel's `VoiceViewModel` keeps running in the backgrounded activity and the Space shows an idle *Record*; the note appears in the panel later, in the host the person has left",
+"Hoist the route (and ideally the capture state) into something both hosts read — a saved handle in `Graph`, or the same `ViewModelStore`",
+"A test that opens a note, enters the Space, and asserts the same note is open",
+""
+]
+},
+{
+"id": "D-19",
+"sev": "Medium",
+"cells": [
+"SCN-001, SCN-003, SCN-010, access principle",
+"no keyboard handling anywhere (`grep -rn keyboard app/src/main` → only two `configChanges` attributes, `AndroidManifest.xml:45,65`)",
+"Text entry inside the Space is unverified. Six of the fifteen scenarios need a text field (title, body, `#tags`, API key, cloud address, search query)",
+"If the Spatial SDK compose panel does not raise the system keyboard, SCN-001, SCN-003, SCN-008, SCN-010, SCN-011 and SCN-014 are all panel-only, and the Space is a viewer rather than a surface — a direct violation of the access principle",
+"Measure first, then fix. If no IME appears, either raise the Horizon system keyboard explicitly or state in `screens.md` that SCR-08 is read-plus-dictate",
+"On a Quest 3: enter the Space, tap the search field, assert an IME appears and text lands. Add it to `ImmersiveLaunchTest` as a second assertion",
+""
+]
+},
+{
+"id": "D-20",
+"sev": "Medium",
+"cells": [
+"SCN-012",
+"`TodayScreen.kt:147`; `NotesViewModel.kt:143-148`",
+"The \"space could not start\" banner's *Retry* re-reads the note list instead of retrying the Space; `spaceStarting` is never rendered",
+"On a headset that refuses the VR activity, the person taps *Retry* repeatedly and the Space never opens, with no sign anything was attempted",
+"Give the banner a dedicated action that re-invokes `onEnterSpace`; render `spaceStarting` with `state_space_starting` (`strings.xml:73`)",
+"A test that forces `spaceFailed` and asserts *Retry* calls the enter lambda again",
+""
+]
+},
+{
+"id": "D-21",
+"sev": "Medium",
+"cells": [
+"SCN-015",
+"`NotesViewModel.kt:240` (`clearJustDeleted` has no caller)",
+"The \"Deleted …\" line with its live *Undo* never clears on leaving the screen, contrary to the alt path",
+"Delete a note, go to Search, come back an hour later, tap the still-present *Undo* by mistake and resurrect something intentionally deleted",
+"Call `clearJustDeleted()` from a `DisposableEffect` on Today, or give the line a timeout like `justCopied`'s",
+"A UI test: delete, navigate away and back, assert the line is gone",
+""
+]
+},
+{
+"id": "D-22",
+"sev": "Medium",
+"cells": [
+"SCN-005, SCN-007",
+"`RemoteWhisperClient.kt:51-57,82`",
+"The whisper server is never told the pinned language, and the reported language is the hint echoed back — so the badge reads the literal `auto`",
+"Person pins `ru`, uses their own whisper server, and gets worse recognition than on the headset plus a badge that says `auto`",
+"Send a `language` part when the hint is not `auto` (as `CloudTranscriptionClient.kt:64-67` already does) and prefer the server's reported language",
+"`RemoteWhisperClientUrlTest` extended: the multipart body carries `language=ru`; a recorded response's language wins over the hint",
+""
+]
+},
+{
+"id": "D-23",
+"sev": "Medium",
+"cells": [
+"SCN-014 (alt), SCN-006",
+"`VoiceViewModel.kt:80-83`",
+"The \"model missing\" gate ignores the chosen provider: it checks only the local model and the **server** URL",
+"(a) Provider *Cloud* with a valid key and no local model → recording is refused with \"download the speech model\", although the cloud would have worked. (b) Provider *Local* with a stale server URL saved → recording proceeds and fails later inside the engine",
+"Gate on the engine the current provider will actually use: ask `Graph.sttProvider()` and check the matching precondition",
+"`VoiceViewModelStateTest` for each of the three providers × model-present/absent",
+""
+]
+},
+{
+"id": "D-24",
+"sev": "Low",
+"cells": [
+"SCN-011",
+"`SettingsScreen.kt:260-270` only",
+"The vault out-of-sync count lives in Settings alone; the scenario says the failure \"is shown once with *Retry*\" where it happened",
+"Notes stop mirroring; the person never opens Settings and never learns their files are not being written",
+"Surface the first mirror failure as a one-shot banner on Today as well",
+"A test asserting a mirror failure reaches the Today banner once",
+""
+]
+},
+{
+"id": "D-25",
+"sev": "Low",
+"cells": [
+"SCN-004, SCN-005, SCN-006, SCN-013",
+"`scenarios.md:103,135,161,206`; `flows.md:46-77`",
+"The contract still says \"(hold)\" as the entry point and FLW-02 still documents hold-to-talk with tap-to-start listed as the **rejected** shape — the opposite of what shipped on 2026-09-19/20",
+"A reader implementing from the contract rebuilds the gesture that was deliberately removed. The prose in SCN-004 (\"Why no hold\") already contradicts its own entry line",
+"Rewrite the contract: the code is right. Update the four entry points, FLW-02's task analysis, its mermaid graph and its rejected-shape note",
+"`grep -n \"hold\" docs/ux/*.md` returns only the rationale, never an instruction",
+""
+]
+},
+{
+"id": "D-26",
+"sev": "Low",
+"cells": [
+"SCN-004, SCN-006",
+"`screens.md:11,15,73-74,113` point SCR-03 and SCR-07 at `ui/VoiceCaptureSheet.kt`, which does not exist at this commit",
+"Two of eight screens in the design map have no code and no replacement; SCR-03's whole premise (a sheet over SCR-01) was deleted",
+"Anyone auditing coverage from `screens.md` follows a dead path and concludes the capture flow is unimplemented",
+"Delete SCR-03, fold SCR-07 into SCR-01/SCR-06 as in-place states, and re-point coverage at `TodayScreen.kt`",
+"Every `Coverage:` path in `screens.md` resolves — a one-line CI check",
+""
+]
+},
+{
+"id": "D-27",
+"sev": "Low",
+"cells": [
+"all",
+"`strings.xml:22,26,28,29,30,42,46,47,51,63,64,65,69,73,92,93,94,105,106,107,110,111,115`",
+"23 user-facing strings are written and rendered nowhere, including every word the contract needs: *Write instead*, *Try again*, *New note*, \"Today's note\", \"Allowed. …\", the three `stt_source_*`, both `state_retranscribed*`",
+"The strings file reads as the contract fulfilled; the screens are the contract half-built. A copy or translation pass would spend its budget on dead text",
+"Wire them (most are named in D-01…D-14) or delete them in the same change as the scenario rewrite",
+"`./gradlew lintDebug` with `UnusedResources` on, or a script diffing `strings.xml` names against `R.string.` references",
+""
+]
+},
+{
+"id": "D-28",
+"sev": "Low",
+"cells": [
+"SCN-014",
+"`UiStateMapper.kt:53-54`; `core-common/…/strings.xml:21`",
+"`AppError.NoApiKey` always reads \"Add an OpenRouter key to use the assistant\" — including on the speech path, where the missing key is the **cloud transcription** key",
+"Person re-runs a recording with *Cloud service*, no speech key saved, and is told to add an OpenRouter key for the assistant. They add the wrong key to the wrong field",
+"Give `NoApiKey` a `what` field the way `Permission` has, and two strings",
+"`UiStateMapperTest` asserting distinct resources for the two callers",
+""
+]
+},
+{
+"id": "D-29",
+"sev": "Low",
+"cells": [
+"SCN-009",
+"`TodayScreen.kt:128`",
+"The Assistant toolbar button uses `Icons.Filled.Mic`, on a screen whose primary action is the microphone",
+"Person looking for dictation taps the microphone glyph and lands in a chat",
+"Use a chat or sparkle glyph",
+"A screenshot review; the icon names are the assertion",
+""
+]
+},
+{
+"id": "D-30",
+"sev": "Low",
+"cells": [
+"SCN-008",
+"`SearchScreen.kt:93-96`",
+"The result shows the whole transcript truncated to two lines, not \"the matching line\"",
+"A word matched 400 characters into a five-minute dictation; the row shows the opening sentence and the person cannot see why it matched",
+"Extract and show the line containing the query",
+"A test asserting the rendered snippet contains the query",
+""
+]
+},
+{
+"id": "E-01",
+"sev": "Blocker",
+"cells": [
+"`EditorViewModel.kt:88-93`; `NoteEditorScreen.kt:67`, `:81`",
+"`flush()` writes the pending note on `viewModelScope`, which is cancelled in `onCleared()`. Both callers fire it as the screen is going away: `DisposableEffect(noteId) { onDispose { viewModel.flush() } }` and `onClick = { viewModel.flush(); onBack() }` — the latter pops synchronously while `flush` has only *launched*. When navigation destroys the back-stack entry, the scope dies with the coroutine suspended inside `repository.upsert` → `dao.upsert`, and the last ≤600 ms of typing is gone.",
+"Silent loss of the half-typed thought — the exact failure the class's own KDoc (`:83-87`) says it exists to prevent. Invisible: the note simply has the previous text.",
+"Do the final write on a scope that outlives the view model: pass an application-scoped `CoroutineScope` (`Graph.scope`, `Graph.kt:39`) into `EditorViewModel` as a constructor parameter and use it in `flush()` only. `retry()` (`:96-101`) may stay on `viewModelScope`.",
+"`EditorViewModel.kt`, `Graph.kt` (one new default arg), `EditorViewModelTest.kt`. No screen change.",
+"A test that calls `vm.flush()` and then cancels the view model's scope **before** `advanceUntilIdle()`, asserting the write landed. Today's test (`EditorViewModelTest.kt:69-82`) never clears the view model, so it passes either way.",
+""
+]
+},
+{
+"id": "E-02",
+"sev": "Blocker",
+"cells": [
+"`AudioRecorder.kt:35`, `:64-69`; `VoiceViewModel.kt:60`, `:66`",
+"The whole recording is accumulated as **boxed** `Short`s. `record(onSamples: (List<Short>) -> Unit)` builds `ArrayList<Short>(read)` per chunk (`:64`) and `VoiceViewModel` appends into `mutableListOf<Short>()` (`:60`). On ART a `java.lang.Short` outside the −128..127 cache is a 16-byte object plus a 4-byte array slot: **~20 bytes per 2-byte sample, ~320 KB per second of audio** against 32 KB/s raw. Arithmetic, not measured.",
+"A 60-second dictation holds ~19 MB of boxed samples and churns the same again per chunk; ten minutes is ~190 MB — alongside whisper's 190–574 MB native context, Compose and an OpenXR session. Nothing bounds the recording length (E-03 makes an unbounded one reachable), so this is an OOM path and the recording dies with the process.",
+"Change the callback to `(ShortArray, Int)` (buffer + count) and accumulate into a growable `ShortArray` or a `ByteArrayOutputStream`; `drainBuffer()` (`:67`) then becomes a single `copyOf`.",
+"`AudioRecorder.kt`, `VoiceViewModel.kt`. **No test touches either** (`VoiceViewModelStateTest` never constructs the view model), so nothing breaks and nothing catches a regression either — add the test with the change.",
+"A JVM test that pushes 16 000 × 60 samples through the buffer and asserts retained size; or `Debug.getNativeHeapAllocatedSize()`/allocation tracking around a 60 s record on the headset.",
+""
+]
+},
+{
+"id": "E-03",
+"sev": "High",
+"cells": [
+"`VoiceViewModel.kt:86-90`; `TodayScreen.kt:127-138`; `FabricApp.kt:42-52`",
+"Recording runs on `viewModelScope`, which is **not** lifecycle-bound. The Today header's Search / Assistant / Space / Settings buttons are live while recording (`TodayScreen.kt:127-138` — nothing disables them on `VoiceState.Recording`). Navigating away leaves Today's entry on the back stack, so its `VoiceViewModel` survives, `recordJob` keeps reading the microphone, and the buffer keeps growing. `collectAsStateWithLifecycle` stops *observing*; it does not stop *recording*.",
+"The microphone stays hot with nothing on screen saying so — which is precisely the risk `docs/modules/app.md` cites as the reason the product chose hold-to-talk, in a build that no longer holds. Combined with E-02 it is the unbounded growth that makes the OOM reachable.",
+"Stop the recording when the owning screen leaves: a `DisposableEffect` in `TodayScreen`/`NoteEditorScreen` calling `voiceViewModel.stopAndTranscribe(false)` on dispose, or bind `recordJob` to the lifecycle. Second, disable the header actions while `voice is VoiceState.Recording`.",
+"`TodayScreen.kt`, `NoteEditorScreen.kt`, possibly `VoiceViewModel.kt`. No test exists to break.",
+"Record, navigate to Settings, wait 30 s, return: the app must not be in `Recording` with 30 s of samples. Today there is no automated way to see this — that is the finding.",
+""
+]
+},
+{
+"id": "E-04",
+"sev": "High",
+"cells": [
+"`NotesViewModel.kt:186-187`; `VoiceViewModel.kt:157`; `ChatViewModel.kt:35`, `:52`, `:66`, `:72`",
+"`Graph` is reached from **method bodies** in exactly three places — and those three are exactly the three units with no test. Everywhere else the pattern is right: `Graph` appears only as a constructor default (`NotesViewModel.kt:70,72`; `EditorViewModel.kt:26,27`; `SearchViewModel.kt:30`; `SettingsViewModel.kt:57,62-66`; `VoiceViewModel.kt:40,41,44,45`), which a test can override. `ChatViewModel` has **no constructor parameters at all**.",
+"The correlation is the finding: `retranscribe` (a 47-line domain rule that decides whether to overwrite a person's edited text), `downloadModel` (a 574 MB transfer) and the entire assistant are unreachable from a test because of one reference each. `SettingsViewModel`'s own KDoc (`:51-55`) already records that this is how the previous audit's defects got in.",
+"Finish the job that class started. `NotesViewModel`: add `withEngine: suspend (SttProvider, WhisperModel, suspend (SttEngine) -> T) -> T = Graph::withEngine` and `language: () -> String = Graph::sttLanguage`. `VoiceViewModel`: add `downloader: () -> ModelDownloader = { Graph.modelDownloader() }`. `ChatViewModel`: add `assistant: Assistant = Graph.assistant`, `model: () -> String = Graph::model`. Stop there — a DI framework is not the answer for six view models.",
+"Three files, four signatures, three new test classes. No screen changes: `viewModel()` still uses the defaults.",
+"The three new test classes compile and run without a `Graph`.",
+""
+]
+},
+{
+"id": "E-05",
+"sev": "High",
+"cells": [
+"`Graph.kt:85-101`, `:151`; `VoiceViewModel.kt:119`, `:131`",
+"`sttEngine()` is rebuilt per call and reads **five** Keystore-backed settings (`:86,87,88,93/94`), `sttProvider()` reads a sixth (`:103`) and `sttLanguage()` a seventh (`:151`) — all on the caller's dispatcher, which is `Dispatchers.Main`: `stopAndTranscribe` launches on `viewModelScope` (`VoiceViewModel.kt:108`) and calls `transcribe(pcm, language())` (`:119`) with `engine()` evaluated at `:131`, neither inside a `withContext`. The project's own measurement is \"the first Keystore use costs tens of milliseconds\" (`SettingsViewModel.kt:97`).",
+"Seven decrypts on the main thread at the exact instant the person releases Record — a visible hitch on the app's one hot path, in a headset where a dropped frame is felt rather than seen.",
+"Wrap the engine resolution in `withContext(Dispatchers.IO)` inside `VoiceViewModel.transcribe`, or better, give `KeystoreSecureSettings` a value cache invalidated on `put`/`remove` (it already caches the key at `SecureSettings.kt:61`, but not the values).",
+"`VoiceViewModel.kt` (one line) for the cheap fix; `SecureSettings.kt` + `SettingsViewModel` reload for the better one.",
+"`StrictMode.ThreadPolicy` with `detectCustomSlowCalls`, or a Perfetto trace of the main thread across a stop-and-transcribe.",
+""
+]
+},
+{
+"id": "E-06",
+"sev": "High",
+"cells": [
+"`Graph.kt:71-79`; `WhisperEngine.kt:86-97`",
+"`localEngine()` is `@Synchronized` and, when the chosen model changed, calls `engine.close()` — which does `runBlocking(dispatcher)` on the whisper executor (`WhisperEngine.kt:89`). So a **blocking wait for a possibly-running transcription plus a native free of up to 574 MB happens on whatever thread called `sttEngine()`, which is the main thread** (E-05), while holding the `Graph` monitor. The free itself is correct and well-reasoned (the KDoc at `:78-85` is right about use-after-free); the *thread it runs on* is not.",
+"Best case a main-thread stall for the native free. Worst case: re-transcribe a long recording with model B, switch back to model A in Settings, press Record — `close()` now waits for the in-flight decode. At the measured 1.31× real time for `small`, a 60-second recording is a 78-second main-thread block, i.e. an ANR kill. The race is contrived but the single-threaded `runBlocking` under a lock is not.",
+"Make engine switching suspend rather than block: hold the current engine in a `Mutex`-guarded suspend accessor and `withContext(Dispatchers.IO) { old.close() }`. Or make `sttEngine()` a `suspend fun`, which also fixes E-05.",
+"`Graph.kt`, `VoiceViewModel.kt`, `NotesViewModel.kt` call sites. No test exists.",
+"A test that holds the whisper dispatcher busy and asserts the switch does not block the caller; on device, an ANR trace.",
+""
+]
+},
+{
+"id": "E-07",
+"sev": "High",
+"cells": [
+"`PanelSmokeTest.kt:20-21` vs `TodayScreen.kt:337`, and `strings.xml:29-30`, `:146`",
+"**The one instrumented test of the panel is RED against this commit.** It asserts `onNodeWithText(\"Hold to record\")` and `onNodeWithText(\"New note\")`. `TodayScreen` renders `R.string.action_record` = \"Record\" (`strings.xml:146`) and has no New-note control at all; `action_hold_to_record` (`:30`) and `action_new_note` (`:29`) are referenced from nowhere in the tree. The test was last touched at `16a5fb5`; `TodayScreen` was rewritten at `732c92b`, three commits later.",
+"A suite that reads as coverage and is a guaranteed failure. Worse, the next person will \"fix\" it by relaxing the assertion rather than by asking what the screen should say.",
+"Assert against the resource id, not the literal: `compose.onNodeWithText(context.getString(R.string.action_record))`. Replace the second assertion with something the screen actually has — `R.string.today_empty` or the settings action's `contentDescription`.",
+"`PanelSmokeTest.kt` only.",
+"`./gradlew :app:connectedDebugAndroidTest --tests '*PanelSmokeTest*'` on a Quest.",
+""
+]
+},
+{
+"id": "E-08",
+"sev": "High",
+"cells": [
+"`TodayScreen.kt:87`, `:110-219`; `AudioRecorder.kt:71`",
+"`val voice by voiceViewModel.state.collectAsStateWithLifecycle()` is read in `TodayScreen`'s **top-level** scope, so every emission recomposes the whole `Column` — header row, error banner, the record control, the confirmation, the undo row and the `LazyColumn` block. `AudioRecorder` emits one `Level` per `AudioRecord.read()` (`:71`), i.e. at the device's minimum-buffer cadence — tens of times a second. `state` (`:86`) is read in the same scope, so any `NotesUiState` field change (including `retranscribing`, which the `items` lambda captures at `:208`) re-runs the list block too.",
+"Full-screen recomposition tens of times a second during the app's core interaction, on hardware where the frame budget is 13.9 ms and the compositor is already contended. Not measured here — but the emission rate is structural and visible in the code.",
+"Stop reading `voice` at the top: pass `voiceViewModel.state` (the flow, or a `() -> VoiceState`) into `RecordControl` and collect inside it, so the recomposition scope is the control. Same for `state.retranscribing` — pass a `busy: (String) -> Boolean` lambda into the item.",
+"`TodayScreen.kt` only, ~15 lines.",
+"Compose's `Recomposition` counts in Layout Inspector, or a `SideEffect { count++ }` in the header while recording.",
+""
+]
+},
+{
+"id": "E-09",
+"sev": "High",
+"cells": [
+"`Graph.kt:86-99` vs `:105-121`",
+"**Two different rules for \"is the cloud configured\" live in one object.** `sttEngine()` requires both a non-blank URL and a non-blank key (`:87-90`) and returns `null` otherwise. `cloudClient()`, used only by `withEngine` (`:136`), falls back to `CloudTranscriptionClient.SUGGESTED_BASE_URL` — Groq — when no URL is set (`:106-107`), and requires only the key. `serverClient()` (`:119-121`) likewise duplicates the server branch of `:97`.",
+"Re-transcribing a note \"via cloud\" sends the person's voice to `api.groq.com` even though the primary path refuses to, because they never configured an endpoint. Two rules about where a recording is sent, in a file whose whole subject is that this is the person's decision. It is also four functions where there should be one.",
+"One private `fun remoteEngine(provider: SttProvider): SttEngine?` used by both `sttEngine()` and `withEngine`. Decide the default-URL question once, in the open.",
+"`Graph.kt` only (~35 lines deleted). Nothing tests it today.",
+"A test over the extracted function asserting that no endpoint configured yields `FailingEngine(NoApiKey)` for both entry points.",
+""
+]
+},
+{
+"id": "E-10",
+"sev": "Medium",
+"cells": [
+"`WhisperEngine.kt:29`, used at `:66`",
+"`override val name: String = \"whisper-small-q5_1\"` is a constant, but the engine is constructed with any of five models (`Graph.kt:78`, `:142`; `WhisperModel.kt:21-25`). Every transcript therefore records `engine = \"whisper-small-q5_1\"` regardless, and `TodayScreen.kt:395-402` prints that string under the note as the receipt of which engine produced the words.",
+"The re-transcription feature exists so a person can tell whether a bigger model is worth waiting for (`TodayScreen.kt:393-394` says exactly that), and the receipt lies for four of the five models. Commit `bb82929` is titled \"the app says what it is called\".",
+"`override val name: String get() = \"whisper-${modelStore.modelName.removePrefix(\"ggml-\").removeSuffix(\".bin\")}\"`, or take the `WhisperModel` and use its `key`.",
+"`WhisperEngine.kt` one line; `WhisperEngineTest`/`WhisperBenchmarkTest` if they assert the name (they do not).",
+"A JVM test constructing `WhisperEngine` over a `TINY` store and asserting `name` contains `tiny`.",
+""
+]
+},
+{
+"id": "E-11",
+"sev": "Medium",
+"cells": [
+"`NotesViewModel.kt:57-61`, `:119-128`; grep of `state.*` across `app/src/main`",
+"Five of eleven `NotesUiState` fields are written and **never read by any screen**: `tags`, `selectedTag`, `today`, `dayLabel`, `spaceStarting`. Verified by grepping `state.<field>` over `app/src/main/kotlin` — the only reads are `message`, `justDeleted`, `loading`, `notes`, `retranscribing`. `loadDailyNote()` runs at construction (`:89`) and at every midnight tick (`:95`), and `dailyNote()` **creates a row** when absent (`NotesRepository.kt:145-157`) which the mirror then writes to disk (`VaultMirror.kt:39`).",
+"An empty note and an empty Markdown file are created every day, for a feature with no UI. Per year: 365 rows and 365 files the person never asked for, each one a row in `observeNotes()` (E-12) and in the assistant's `recent(40)` window (`NotesContextBuilder.kt:30`), which the assistant then reads as context. Plus `spaceFailed(cause)` discards its parameter (`:143-148`).",
+"Decide: either render the daily note (it is the \"Today\" in `TodayScreen`) or delete `today`/`dayLabel`/`loadDailyNote`/`midnightTicks` and the `dailyNote` path. Delete `tags`/`selectedTag`/`selectTag` with E-12. Delete `spaceStarting` or render it.",
+"`NotesViewModel.kt` (~40 lines), `NotesViewModelTest.kt:120-134` (the midnight test goes with it), possibly `NotesRepository.dailyNote` + `NoteDao.getOrCreateByDay` + `MIGRATION_1_2`.",
+"`grep -rn 'state\\.today\\",
+"state\\.dayLabel\\",
+"state\\.tags\\",
+"state\\.selectedTag\\",
+"state\\.spaceStarting' app/src/main` returns nothing — that *is* the evidence.",
+""
+]
+},
+{
+"id": "E-12",
+"sev": "Medium",
+"cells": [
+"`NoteDao.kt:28-29`; `NotesRepository.kt:70-78`; `NotesViewModel.kt:103-114`",
+"`observeTags()` runs `SELECT tags FROM notes` — a full table scan — and then does a `flatMap`/`filter`/`distinct`/`sorted` over every row in Kotlin. It is `combine`d with `observeNotes()` (`:103-106`), so **every** note write re-runs both, and the result lands in `state.tags`, which nothing renders (E-11).",
+"A full table scan plus an allocation-heavy transform per keystroke-debounce of the editor's autosave, for a value that is discarded. It is the cheapest real saving in the tree.",
+"Delete `observeTags` from the `combine`; keep the repository method (it is tested at `NotesRepositoryTest.kt:66`, `:105`) until the tag UI arrives.",
+"`NotesViewModel.kt` (~8 lines), `NotesViewModelTest.kt:45` (the fake's stub can stay).",
+"The `combine` is gone; `NotesRepositoryTest` still green.",
+""
+]
+},
+{
+"id": "E-13",
+"sev": "Medium",
+"cells": [
+"`app/src/main/res/values/strings.xml` (25 keys, listed below); `Tokens.kt:28,32,55,73,74`",
+"**25 of 114 app string keys and 5 of 24 tokens are referenced from nowhere** (method: grep for `R.string.<key>` and `@string/<key>` over every `.kt` and `.xml` outside `build/`). `core-common`'s 24 strings are all used. Two of the dead tokens are asserted as live in a dated spec: `…-design.md` says \"`Tokens.Motion` is in use: `quickMs` eases the hold button's colour, `calmMs` cross-fades the voice sheet's states\" — the sheet is gone and `TodayScreen` animates nothing.",
+"The strings are the fossil record of the hold-gesture UI and the voice sheet; leaving them means the next copy pass translates 25 sentences nobody reads, and the resource shrinker cannot drop a `<string>` reached by id. The Motion tokens make a documentation claim false (that is Axis F's to grade; the tokens are mine).",
+"Delete the 25 keys and the 5 tokens. Keep `Motion` only if E-08's fix introduces an animation.",
+"`strings.xml`, `Tokens.kt`. `PanelSmokeTest` references two of them **as literals** — fix E-07 first or the delete is invisible to it.",
+"Re-run the grep; it must return zero.",
+""
+]
+},
+{
+"id": "E-14",
+"sev": "Medium",
+"cells": [
+"`TodayScreen.kt:223-231`; `NotesViewModel.kt:245-247`, `:197-201`; `EditorViewModel.kt:63`",
+"The convention \"a dictation's title is the first 60 characters of its body\" is encoded in **four** places with three different expressions of it: `createVoiceNote` writes `title = transcript.text.take(60), body = transcript.text` (`:245-247`); `noteText()` undoes it at read time with `body.startsWith(title)` (`TodayScreen.kt:228`); `retranscribe` re-derives it with `note.title == note.transcript?.text?.take(60)` (`NotesViewModel.kt:197`); `attachTranscript` applies it again with `current.title.ifBlank { transcript.text.take(60) }` (`EditorViewModel.kt:63`). `Note.preview` (`Note.kt:35`) is a fifth, different, answer to \"what to show\".",
+"Change `60` in one place and the copy button pastes the title twice, or the re-transcription silently declines to update the title. Three of the four have no test between them.",
+"One place, in `:core-notes` beside `Note`: `Note.displayText`, `Note.titleFrom(text)`, and a `Note.isTitleDerived` predicate. `noteText()` in `TodayScreen` becomes a call.",
+"`Note.kt` (+3 members), `TodayScreen.kt`, `NotesViewModel.kt` ×2, `EditorViewModel.kt`. `NotesViewModelTest.kt:86-105` and `EditorViewModelTest.kt:96-123` already cover two of the four and would need to keep passing.",
+"A `NoteTextTest` in `:core-notes` over the four cases `noteText` enumerates, plus the existing view-model tests staying green.",
+""
+]
+},
+{
+"id": "E-15",
+"sev": "Medium",
+"cells": [
+"`TodayScreen.kt:240-344` vs `NoteEditorScreen.kt:88-118`",
+"Two record controls, and **they have already diverged**. Today's handles `NeedsPermission`, `Recording`, `Downloading` (with progress and cancel), `Failed` (with a banner and five recovery actions) and `NothingHeard`. The editor's handles `NeedsPermission`, `Recording` and `Transcribing` and **nothing else**: a failed dictation in the editor, a missing model, or a download in progress shows a button labelled \"Record\" and no message whatsoever, because `NoteEditorScreen` never renders `voiceState is VoiceState.Failed`.",
+"A dictation that fails inside the editor is silent — the person presses Record, nothing happens, and there is no banner. That is a first-session bug in the second most likely place to dictate.",
+"Extract `RecordControl` (`TodayScreen.kt:240-344`) into its own file taking `voice` plus the seven callbacks, and use it from both screens. It is already parameterised correctly — only `private` and its file location stand in the way.",
+"New `ui/RecordControl.kt`; `TodayScreen.kt` −105 lines; `NoteEditorScreen.kt` −30 lines. No test touches either.",
+"A Robolectric composition test over `RecordControl` in each of the eight `VoiceState`s asserting a non-blank message. None exists today.",
+""
+]
+},
+{
+"id": "E-16",
+"sev": "Medium",
+"cells": [
+"`CloudTranscriptionClient.kt:51-109` vs `RemoteWhisperClient.kt:47-97`",
+"The two HTTP transcription clients share, near-verbatim: `withContext(Dispatchers.IO)` + `runCatchingCancellable`, the `WavWriter.toWav` multipart form, the `invokeOnCompletion { call.cancel() }` cancellation hook (`:81` / `:67`), the bounded body read via `source.request(MAX)` + `buffer.snapshot().utf8().take(...)` (`:84-87` / `:69-73`), the `!isSuccessful → RemoteStt(code, body)` throw, the `Json.parseToJsonElement(...)[\"text\"]` extraction, the `Transcript(...)` construction, and the `fold` that classifies the throwable (`:102-108` / `:88-96`). What genuinely differs is four things: the route, the `Authorization` header, three extra form fields, and the language normalisation table. Each also builds **its own `OkHttpClient`** by default (`:40-42` / `:29-31`) — and `Graph` constructs a new one per call (`:91`, `:110`), so a connection pool and a dispatcher thread pool are allocated and discarded per transcription.",
+"~70 duplicated lines across two files that must be fixed twice. The per-call `OkHttpClient` is the concrete cost: no connection reuse for the cloud path, and two idle thread pools per dictation until GC.",
+"Extract a `MultipartTranscriptionCall` helper in `:feature-stt` holding the shared body, taking route + headers + extra parts + a response mapper. Separately, hoist **one** `OkHttpClient` into `Graph` as a `by lazy` and pass it to both (`Graph.kt:91`, `:110`, `:121`). The client hoist is worth doing even if the extraction is not.",
+"`feature-stt` (+1 file, 2 edited), `Graph.kt`. `CloudTranscriptionClientTest.kt` (6 tests) and `SttRouterTest.kt` already inject a client and would keep working.",
+"Both existing test classes green after the extraction; `assertSame` on the client across two `Graph.sttEngine()` calls.",
+""
+]
+},
+{
+"id": "E-17",
+"sev": "Medium",
+"cells": [
+"absence of `.github/`, `.gitlab-ci.yml`, or any CI config (checked at the repository root)",
+"**There is no CI.** Nothing runs the 96 JVM tests on a push. `scripts/check-docs.sh` (24 KB) and `scripts/check-secrets.sh` exist and are run by hand. E-07 is the direct consequence: an instrumented test went red three commits ago and nothing said so.",
+"Every finding in this table that ends \"verify by a test\" is worth less without something that runs it. The suite's value decays from the day it stops being run.",
+"The minimum that is worth having, and nothing more: one GitHub Actions workflow on push and PR, JDK 17, `./gradlew --no-daemon test lint` plus `scripts/check-secrets.sh`. Device tests cannot run on a hosted runner and should be left out rather than faked — say so in the workflow's comment. Add `assembleDebug` only if the NDK build is cached, or it will take 20 minutes.",
+"One new file. No source changes.",
+"The badge is green on a PR that breaks a test, and red.",
+""
+]
+},
+{
+"id": "E-18",
+"sev": "Medium",
+"cells": [
+"`VoiceViewModelStateTest.kt:23`, `:34`",
+"The only \"VoiceViewModel\" test **does not touch `VoiceViewModel`**. Both tests rewrite the guard inline — `val stateAfterRelease = if (state !is VoiceState.Recording) state else VoiceState.Transcribing` — and assert on the local variable. It is a test of a copy of the rule. If `stopAndTranscribe` (`VoiceViewModel.kt:100`) loses its guard tomorrow, this test still passes.",
+"It occupies the name under which a real test would be found, so the absence reads as presence.",
+"Delete it and write the real one, which E-04 makes possible: construct `VoiceViewModel` with a fake recorder, a fake engine and a temp `audioDir`, and drive the whole start → record → stop → transcribe → ready → consumed path.",
+"`VoiceViewModelStateTest.kt` (replaced), `VoiceViewModel.kt` (one new default arg from E-04).",
+"The new test fails when the `if (_state.value !is VoiceState.Recording) return` guard at `:100` is deleted. Today's does not.",
+""
+]
+},
+{
+"id": "E-19",
+"sev": "Medium",
+"cells": [
+"all six `build.gradle.kts`",
+"Each module repeats the same block: `compileSdk = 35`, `minSdk = 34`, the identical `compileOptions`/`kotlin { jvmTarget }` pair, three `sourceSets[...].kotlin.srcDir`, `testOptions { unitTests.isIncludeAndroidResources = true }`, the same five `testImplementation` lines, and a verbatim four-line `resolutionStrategy.force(\"org.jetbrains.kotlin:kotlin-stdlib:...\")` with the same three-line comment (`app:117-121`, `core-common:45-49`, `core-notes:44-48`, `feature-vault:33-37`, `feature-stt:64-68`, `feature-assistant:37-41`). ~110 duplicated lines.",
+"An SDK bump is six edits, and the sixth will be forgotten. The stdlib pin in particular is load-bearing (it exists because AGP 8.11.1 pulls a newer stdlib than the compiler) and a module that loses it fails with a metadata-version error nobody will connect to this.",
+"A `build-logic` included build with one `fabricvr.android.library` convention plugin and one `fabricvr.android.app`.",
+"Six build files, one new `build-logic` module. No source changes, no test changes.",
+"`./gradlew build` produces the same artifacts; `./gradlew :app:dependencies` shows the same forced stdlib.",
+""
+]
+},
+{
+"id": "E-20",
+"sev": "Medium",
+"cells": [
+"`NoteEntity.kt:33-40`; `NoteDao.kt:31-39`, `:67-79`; `NotesRepositoryTest.kt:109-116`",
+"`@Fts4` is declared with no `tokenizer` and no `contentEntity`. Two consequences. (a) Room's default is `simple`, which case-folds **ASCII only** — so a query typed as `Разреш` would not match a note containing `разрешение`, while the lowercase `разреш` does. The test at `:113-115` only ever uses lowercase on both sides, so the suite cannot see it. Stated as unproven: one capitalised assertion settles it either way. (b) Without `contentEntity`, title + body + transcript are stored **twice** — once in `notes`, once in `note_fts` — and the DAO hand-maintains the copy (`:70-78`).",
+"(a) is a first-session bug for the app's stated bilingual purpose: a Russian sentence starts with a capital, and so does the search a person types. (b) doubles the on-disk text and makes every upsert a delete-plus-insert into a second table inside the transaction.",
+"(a) `@Fts4(tokenizer = FtsOptions.TOKENIZER_UNICODE61)` + schema v3 + a migration that rebuilds the FTS table. (b) `contentEntity = NoteEntity::class` would remove the duplication and the manual sync, but the column names must match and it is a second migration — **not worth it now**; (a) is.",
+"`NoteEntity.kt`, `NotesDatabase.kt` (+1 migration), `core-notes/schemas/`, `NotesRepositoryTest.kt`.",
+"Add `assertEquals(1, repo.search(\"Разреш\").first().size)` to `NotesRepositoryTest.kt:109` — it either passes today or it does not, and that answers the claim.",
+""
+]
+},
+{
+"id": "E-21",
+"sev": "Low",
+"cells": [
+"`ui/AudioAdoption.kt:16-25`",
+"`Vault.adoptOrKeep` — vault policy — sits in `:app`'s `ui` package as an `internal` extension, because `:feature-vault` cannot see it there. Its two callers are view models (`NotesViewModel.kt:249`, `EditorViewModel.kt:68`).",
+"Small. It is 10 lines and it is correct. But it is the only piece of vault behaviour outside `:feature-vault`, and it is the one that decides what happens when a recording cannot be moved.",
+"Move it to `feature-vault/.../vault/AudioAdoption.kt` as a public extension.",
+"Two import lines; `NotesViewModelTest.kt:59-84` and `EditorViewModelTest.kt:50-64` fakes are unaffected (they implement `Vault`).",
+"Compiles; `VaultAudioTest` can then cover it directly.",
+""
+]
+},
+{
+"id": "E-22",
+"sev": "Low",
+"cells": [
+"`Note.kt:4`, `:13`; `feature-stt/build.gradle.kts:50`",
+"`Transcript`/`SttSource` live in `:core-notes`, so `:feature-stt` depends on the whole notes module — Room, DAO, repository, `TagParser` — to obtain the two types it produces. Inverts the spec's stated ownership (`…-modules.md:79-80`). `Transcript` also carries `fallbackReason: AppError` (`Note.kt:19`), so the notes model knows that a speech server can fail.",
+"Nothing today: the graph is still acyclic and `:core-notes` has no stt dependency. It costs a longer compile classpath for stt and it will matter the first time something else wants `Transcript` without wanting Room.",
+"Move both types to `:feature-stt` and make `:core-notes` depend on it — or, cleaner, to `:core-common`, which both already depend on.",
+"`Note.kt` (−18 lines), `feature-stt/build.gradle.kts`, `core-notes/build.gradle.kts`, ~12 import lines.",
+"`./gradlew build`; `:feature-stt:dependencies` no longer lists `:core-notes`.",
+""
+]
+},
+{
+"id": "E-23",
+"sev": "Low",
+"cells": [
+"`NotesRepository.kt:58-62`",
+"`MutableSharedFlow(replay = 64, extraBufferCapacity = 256)` retains the last 64 `NoteChange.Upserted` — each holding a full `Note` with its body and transcript — for the life of the process. The `replay` is deliberate and correct (`:52-57` explains the late-subscriber bug it fixes), but 64 is far more than the one the fix needs.",
+"Up to 64 full note bodies held indefinitely, and — given that retained dictated text is a live privacy concern — 64 bodies of dictated text in a heap dump. Small, but free to fix.",
+"`replay = 1` is what the documented bug requires (one mirror, one late subscriber). Keep `extraBufferCapacity` and `SUSPEND`.",
+"`NotesRepository.kt` one line; `VaultMirrorTest.kt:83` (\"a note saved before the mirror subscribes is still mirrored\") is the test that pins the behaviour and must stay green.",
+"`VaultMirrorTest` green with `replay = 1`.",
+""
+]
+},
+{
+"id": "E-24",
+"sev": "Low",
+"cells": [
+"`VoiceViewModel.kt:116-118`, `:196-204`",
+"The scratch WAV is written to `filesDir/audio` before transcription (`:117`) and deleted only by `cancel()` (`:201`). If the process dies while `Transcribing` — or if the person navigates away and the transcript is never consumed — the file stays. Nothing ever sweeps that directory.",
+"Slow growth of orphaned WAVs in private storage: ~32 KB per second of audio, invisible to the person, on a device where storage is not expandable.",
+"A sweep in `Graph.init`: delete files in `filesDir/audio` older than 24 h. Ten lines, on `Graph.scope`, not on the main thread.",
+"`Graph.kt`, `FabricVrApp.kt` unchanged.",
+"A test over the sweep function with a fake clock.",
+""
+]
+},
+{
+"id": "E-25",
+"sev": "Low",
+"cells": [
+"`NotesViewModel.kt:143-148`",
+"`spaceFailed(cause: Throwable)` never uses `cause`; it maps every failure to the same `R.string.state_space_failed` with `UiAction.RETRY`. Everywhere else in the codebase a throwable is classified through `toMessage()` (`:258-268`).",
+"The one failure path that discards its reason, in a codebase whose stated rule is that nothing is swallowed. If the Space fails for a reason other than a missing VR category, the person is told to retry forever.",
+"`_state.value = _state.value.copy(spaceStarting = false, message = cause.toMessage())`, or at minimum `Log2.w(\"space.failed\", \"cause\" to cause::class.java.simpleName)`.",
+"`NotesViewModel.kt` one line.",
+"A test asserting a non-generic message for a non-`ActivityNotFoundException`.",
+""
+]
+},
+{
+"id": "F-01",
+"sev": "Blocker",
+"cells": [
+"`docs/handoff/2026-09-19-v1-build-handoff.md:77-80`",
+"\"**The next agent's task is H-28, the device gate below, and nothing before it.**\"",
+"Nine commits shipped after the handoff was last touched (`9daec47` → `421377e`), reshaping capture, speech routing, the model catalogue and the Space. `git log --stat 9daec47..HEAD`",
+"The handoff is the named entry point (`:120-123`) and it describes a build that no longer exists. Write a 2026-09-20 handoff; until then mark this one superseded at the top, not inside.",
+""
+]
+},
+{
+"id": "F-02",
+"sev": "Blocker",
+"cells": [
+"`docs/handoff/2026-09-19-v1-build-handoff.md:96-103` (the device gate)",
+"\"3. **REQ-003** — … then hold *Record* and dictate one Russian and one English sentence.\"",
+"There is no hold gesture. `HoldToTalkButton.kt` was deleted in `732c92b`; the control is press-to-start/press-to-stop — `strings.xml:115-116` (`action_start_record`, `action_stop_record`), `TodayScreen.kt:328`, `NoteEditorScreen.kt:98,113-114`",
+"A person given this gate cannot perform step 3 and will report REQ-003 unverifiable. Rewrite the five checks against the current UI, and add the two things that are now the risk: entering the Space at all, and a dictation that commits itself.",
+""
+]
+},
+{
+"id": "F-03",
+"sev": "Blocker",
+"cells": [
+"`docs/handoff/2026-09-19-v1-build-handoff.md:115-118`",
+"\"**The instrumented suite has now run.** 13 tests on a Quest 3, 0 failures, 0 skipped … Re-run with `ANDROID_SERIAL=<device> ./gradlew connectedDebugAndroidTest`.\"",
+"Two of the suite's tests fail on the current tree. `PanelSmokeTest.kt:20` asserts `onNodeWithText(\"Hold to record\")`, a string no screen renders any more (`action_hold_to_record` exists at `strings.xml:30` and has **no** Kotlin caller). `ImmersiveLaunchTest` is declared failing by the commit that wrote it — `421377e`: \"It fails right now, and correctly\".",
+"A next agent runs the suite, sees red, and cannot tell a stale assertion from a regression. Say in the handoff which tests are expected red and why; fix `PanelSmokeTest`'s assertion; give `ImmersiveLaunchTest` a board row.",
+""
+]
+},
+{
+"id": "F-04",
+"sev": "Blocker",
+"cells": [
+"`docs/handoff/2026-09-19-v1-build-handoff.md:8-11`",
+"\"**State: hardened, still not yet seen running** … Nobody has watched the app run, because the Quest went to sleep and `adb` has reported it `offline` since 13:12.\"",
+"The same file at `:27` says the headset came back at 17:40 and the app is running; `docs/evidence/verification.md:162` records the panel observed rendering beside a virtual desktop at 17:55.",
+"The document contradicts itself in two adjacent sections. A reader who stops at the status block plans a device session that has already happened. Rewrite the status block; keep `:27`.",
+""
+]
+},
+{
+"id": "F-05",
+"sev": "High",
+"cells": [
+"`docs/modules/app.md:26-27`",
+"\"**Hold to talk, not tap to start.** A stray raycast in a headset would otherwise leave the microphone open with nothing on screen saying so.\"",
+"Tap to start is exactly what shipped (`TodayScreen.kt:157`, `NoteEditorScreen.kt:98`), and `app.md:33-36` in the same *Decisions worth keeping* list states the opposite decision.",
+"Two contradictory standing decisions in one list, seven lines apart. Delete the first and record the reversal as a `DEC-` row (see F-M03 below), because a reversed decision with no register entry will be re-litigated.",
+""
+]
+},
+{
+"id": "F-06",
+"sev": "High",
+"cells": [
+"`docs/modules/app.md:16`",
+"\"**Screens** — Today, Note editor, Search, Assistant chat, Settings, plus the voice capture sheet.\"",
+"`VoiceCaptureSheet.kt` was deleted in `732c92b` (245 lines removed); no file of that name exists under `app/src`.",
+"Drop the sheet. Add `SpatialPanelOwners` and `SpeechChoice` to *Owns* — both are new files the module doc never learned about.",
+""
+]
+},
+{
+"id": "F-07",
+"sev": "High",
+"cells": [
+"`docs/ux/screens.md:11,15`",
+"SCR-03 and SCR-07 `Coverage: app/src/main/kotlin/ai/passioncode/fabricvr/ui/VoiceCaptureSheet.kt`",
+"The file does not exist. `python3 docs/ux/lint.py` still exits 0 — it does not check that a `Coverage:` path resolves.",
+"Repoint SCR-07 at `TodayScreen.kt`; retire SCR-03 or redefine it as the in-panel capture control. And add a path-existence check to the UX lint, which is the only reason this survived a green gate.",
+""
+]
+},
+{
+"id": "F-08",
+"sev": "High",
+"cells": [
+"`docs/ux/screens.md:43` and `:64-74`",
+"SCR-01 elements: \"*Record* (primary, **hold-to-talk**)\"; SCR-03: \"Appears over SCR-01 or SCR-02 while the record control is **held** … *Release to stop* hint … the transcript preview with *Save* and *Discard*.\"",
+"No hold, no overlay, no Save/Discard. `TodayScreen.kt:65-68` documents the opposite in its own header comment: \"It has no sheet, no dialog and no hold gesture, and that is the design rather than an omission.\"",
+"Rewrite SCR-01's element list and delete or rewrite SCR-03 wholesale.",
+""
+]
+},
+{
+"id": "F-09",
+"sev": "High",
+"cells": [
+"`docs/ux/flows.md:53-57`",
+"FLW-02 task analysis: \"1. Hold the record control … 2. Speak; release\"; \"**Rejected shape:** tap-to-start / tap-to-stop — lost because in a headset an accidental raycast leaves the microphone open with nothing on screen saying so; hold-to-talk cannot be left running.\"",
+"The rejected shape is the shipped shape. The mermaid at `:60-77` still routes `R -->",
+"release",
+"T` and `V -->",
+"tap Save",
+"S`.",
+"`flows.md` now tells a reader the current product was considered and rejected. Rewrite FLW-02 and move the old rationale into the `DEC-` row for the reversal, where a rejected-then-adopted shape belongs.",
+""
+]
+},
+{
+"id": "F-10",
+"sev": "High",
+"cells": [
+"`docs/modules/feature-stt.md:6-29` (*Owns* and *Checks*)",
+"The module owns `WhisperEngine`, `ModelStore`/`ModelDownloader`, `RemoteWhisperClient`, `SttRouter`, `AudioRecorder`, `WavWriter` — \"**19 JVM tests**\".",
+"`CloudTranscriptionClient.kt` (144 lines, sends the recording to a third-party endpoint), `SttProvider.kt` and `WhisperModel.kt` are in the module and in none of its doc. Source count: `SttRouterTest` 6, `ModelDownloaderTest` **8** (not 6), `RemoteWhisperClientUrlTest` 5, `WavWriterTest` 2, `CloudTranscriptionClientTest` **6** = **27**.",
+"The single most privacy-relevant class in the repository has no entry in its module's contract file, against the `DOCMAP.md:72` propagation rule. Add all three; recount.",
+""
+]
+},
+{
+"id": "F-11",
+"sev": "High",
+"cells": [
+"`docs/DECISIONS.md:66-77` (DEC-0003)",
+"\"a configured whisper-server **is preferred** and its failure degrades to the device\"",
+"`Graph.kt:89-99`: a whisper-server URL alone routes nowhere; the remote engine is built only when `sttProvider() == SttProvider.SERVER`. A saved URL with the provider left at its default `LOCAL` (`SttProvider.kt:23`) is ignored.",
+"DEC-0003's decision clause is false for the current build and carries no `Refined by`/`Contradicts` annotation. Record the provider decision (F-M07) and annotate DEC-0003.",
+""
+]
+},
+{
+"id": "F-12",
+"sev": "High",
+"cells": [
+"`docs/DECISIONS.md:101-104` (DEC-0005)",
+"\"the policy is enforced in code at **the two call sites**: `RemoteWhisperClient` … and `OpenRouterClient` …\"",
+"There are three. `CloudTranscriptionClient.kt:45` calls `NetworkPolicy.requireReachable(baseUrl)` and throws `AppError.InsecureUrl`.",
+"Update the clause (and note the consequence a reader needs: the policy **permits** a cloud STT key and a microphone recording over plain `http://` to any RFC1918 host — `NetworkPolicy.kt:18-19`).",
+""
+]
+},
+{
+"id": "F-13",
+"sev": "High",
+"cells": [
+"`docs/DECISIONS.md:133-136` (DEC-0007)",
+"\"`close()` frees **inside** the engine's dispatcher … it is called on a **best-effort `onTerminate` only**.\"",
+"`grep -rn onTerminate app/src core-common/src feature-stt/src` returns nothing — there is no `onTerminate` anywhere. `close()` now has two live callers: `Graph.kt:76` (a model change closes the loaded engine) and `Graph.kt:145` (a throwaway engine for *Transcribe again*).",
+"The decision's stated lifetime rule no longer describes the code in either direction. Annotate and record the new rule (F-M12).",
+""
+]
+},
+{
+"id": "F-14",
+"sev": "High",
+"cells": [
+"`docs/evidence/verification.md:159` (REQ-009, re-observed)",
+"\"`UiStringsTest`, 2 tests: **every one of the 17 `AppError` shapes** resolves through the resource table to a non-blank sentence\"",
+"`UiStringsTest.kt:20-36` lists 17 *cases*, and `AppError.InsecureUrl` — a real shape, `AppError.kt:25`, the one `DEC-0005` created — is **not among them**. `AppError` has 11 constructors; 17 is the case count, not the shape count.",
+"The row claims exhaustive coverage its evidence does not show. Correct the wording to \"17 cases\" and add `InsecureUrl`.",
+""
+]
+},
+{
+"id": "F-15",
+"sev": "High",
+"cells": [
+"`docs/evidence/verification.md:17` and `:55`",
+"\"`python3 scripts/graph.py producer` — from the project root\"; \"`scripts/exposure.sh` reports four states\"",
+"Neither file exists. `scripts/` holds `check-docs.sh`, `check-secrets.sh`, `install-on-quest.sh`, `push-model-for-tests.sh`.",
+"The ledger's own producer block and its entire staleness mechanism are uncomputable here — which is why no row has ever been marked `behind` despite ten commits. Either vendor the two scripts or replace those sections with what this project can actually run.",
+""
+]
+},
+{
+"id": "F-16",
+"sev": "High",
+"cells": [
+"`README.md:13-15`",
+"\"v1 is **built and installed on the operator's Quest 3**; nobody has watched it run yet — the headset slept before the launch could be observed.\"",
+"`9daec47` and `verification.md:162` record the panel launched, resumed in multi-window and photographed beside a virtual desktop on 2026-09-19 at 17:55.",
+"Same stale status as F-04, in the file a new reader opens first.",
+""
+]
+},
+{
+"id": "F-17",
+"sev": "High",
+"cells": [
+"`README.md:22-23`",
+"\"**Voice** — **hold** to record from the headset microphone, transcribed **on the device** by whisper.cpp (`ggml-small-q5_1`…). **An optional whisper-server URL is preferred when set**, and the app falls back to the device and says so.\"",
+"Three claims, three misses: no hold (F-02); five models (`WhisperModel.kt:21-25`); the URL is not preferred unless the provider is set to `SERVER` (`Graph.kt:97`). The cloud provider — a third-party endpoint that receives the recording — is not mentioned in the README at all.",
+"Rewrite the bullet. This is the paragraph that tells a reader where their voice goes.",
+""
+]
+},
+{
+"id": "F-18",
+"sev": "High",
+"cells": [
+"`README.md:137-143` (*Security posture*)",
+"Names exactly one secret: \"The OpenRouter key is AES-256/GCM in AndroidKeyStore…\"",
+"`SecureSettings.kt:43-45` now stores `cloud_stt_url`, `cloud_stt_key`, `cloud_stt_model`. The same `run-as` caveat at `:141-142` applies to the STT key, and the cleartext note at `:142-143` says cleartext is permitted \"only to a whisper-server on your own network\" while `CloudTranscriptionClient` accepts any RFC1918 host too.",
+"A security section that names one of two secrets is worse than none. Add the STT key and widen the cleartext sentence.",
+""
+]
+},
+{
+"id": "F-19",
+"sev": "High",
+"cells": [
+"`docs/evidence/backlog.md` (the whole table)",
+"B-001…B-027 closed, B-028…B-036 open — every row sourced from `2026-09-19-v1-notes-core` / audit `2026-09-19-v1-audit`.",
+"Nine commits of new work (`4bddfcc`…`421377e`) produced **zero** board rows: the capture reshape, cloud STT, the model catalogue, the hand-tracking declaration, the panel owners, beam search, and a known-failing `ImmersiveLaunchTest`.",
+"The board is the file \"a loop iteration reads at the top\" (`:8-10`) and it has no knowledge of a day's work. See *Board and carry-over*.",
+""
+]
+},
+{
+"id": "F-20",
+"sev": "Medium",
+"cells": [
+"`docs/modules/core-notes.md:18`",
+"\"**A blank query matches nothing.** An empty search field is not a request to list the base.\"",
+"`SearchViewModel.kt:43-46`: \"A blank field is not 'no results': it lists what the person wrote recently\" — `if (query.isBlank()) repository.observeNotes() else repository.search(query)`. Changed in `830ad0a`; the module doc was updated in the same commit for counts but not for this.",
+"Delete or invert the bullet. It is a *Decisions worth keeping* row asserting the opposite of the code.",
+""
+]
+},
+{
+"id": "F-21",
+"sev": "Medium",
+"cells": [
+"`docs/modules/core-common.md:30-33`",
+"\"`UiStateMapperTest` (8) … `NetworkPolicyTest` (5) … `InMemorySecureSettingsTest` (3) and `LoggingTest` (1) — **18 JVM tests**\"",
+"8 + 5 + 3 + 1 = 17, and 17 is what the source holds. The total is a typo, not a stale count.",
+"17.",
+""
+]
+},
+{
+"id": "F-22",
+"sev": "Medium",
+"cells": [
+"`README.md:114`",
+"\"`./gradlew testDebugUnitTest` # **115 JVM tests**\"",
+"122 `@Test` in the six modules' `src/test` (third_party excluded). The delta is `CloudTranscriptionClientTest` (+6), `ModelDownloaderTest` (+2), `SettingsViewModelTest` (+2 net), etc.",
+"122. Same number is stale at `docs/handoff/…-build-handoff.md:25`.",
+""
+]
+},
+{
+"id": "F-23",
+"sev": "Medium",
+"cells": [
+"`docs/handoff/2026-09-19-v1-build-handoff.md:25,26,115`",
+"\"**115 JVM tests** … and **13 instrumented tests** on a Quest 3\"",
+"122 JVM and 15 instrumented in source (`ImmersiveLaunchTest` and `ModelDownloadReachabilityTest` were added after).",
+"Recount, and see F-03 — two of the 15 are red.",
+""
+]
+},
+{
+"id": "F-24",
+"sev": "Medium",
+"cells": [
+"`docs/evidence/verification.md:88-96`",
+"The Environment vocabulary is declared as exactly five values: `production`, `preview`, `ci`, `local`, `—`, with \"not invented per row\".",
+"Six rows at `:156-162` use `device`, which is in no declared list and in no runbook.",
+"Declare `device` in the table (it is the right value; the rule it breaks is that it was never declared).",
+""
+]
+},
+{
+"id": "F-25",
+"sev": "Medium",
+"cells": [
+"`docs/DOCMAP.md:74`",
+"Propagation row: \"New/changed entity or field → `docs/modules/notes-core.md` (data model), `CONTEXT.md`\"",
+"The file is `docs/modules/core-notes.md`. `notes-core.md` does not exist. The gate's link check passed because the name sits in a backtick span, not a markdown link.",
+"Fix the name.",
+""
+]
+},
+{
+"id": "F-26",
+"sev": "Medium",
+"cells": [
+"`docs/DOCMAP.md:82-84` (*Gates*)",
+"One gate: `bash scripts/check-docs.sh`.",
+"Three gates are mandatory per `docs/evidence/plans/2026-09-19-v1-hardening.md:26-28`: `check-docs.sh`, `check-secrets.sh`, `python3 docs/ux/lint.py`. `README.md:113-119` lists five checks.",
+"The doc map's gate table is the one place an agent looks for \"what must pass\"; it lists a third of them.",
+""
+]
+},
+{
+"id": "F-27",
+"sev": "Medium",
+"cells": [
+"`docs/ux/screens.md:51,61,73,82,92,103,112,122`",
+"Each screen carries \"**Wireframe:** `wireframes/SCR-0N.md`\".",
+"`docs/ux/wireframes/` does not exist; no file named `SCR-0*` exists in the repository.",
+"Eight dead pointers. Either produce them or say `none — text-only for v1`, which is what carry-over row 2 actually decided.",
+""
+]
+},
+{
+"id": "F-28",
+"sev": "Medium",
+"cells": [
+"`docs/ux/scenarios.md:100,135,161,206`",
+"SCN-004/005/013 \"Entry point: SCR-01 *Record* (**hold**)\"; SCN-006 \"first **hold** of *Record*\", \":164\" \"**Hold** *Record* for the first time\", \":169\" \"starts on the next **hold**\".",
+"Press-to-toggle. SCN-004's own step 1 at `:103` says \"Press *Record* once\" — the entry-point line contradicts the step list inside the same scenario.",
+"`732c92b` rewrote the bodies of SCN-004/005 and left the entry-point lines and SCN-006/013 untouched.",
+""
+]
+},
+{
+"id": "F-29",
+"sev": "Medium",
+"cells": [
+"`docs/ux/scenarios.md:125` and `:209,215`",
+"SCN-004 errors: \"silence → 'Nothing was heard' with *Try again*, **the sheet stays open**\"; SCN-013: \"the **sheet** explains that dictation needs the microphone\", \"UI elements: … explanation **sheet**\".",
+"No sheet exists. `TodayScreen.kt:295,301` draws `state_needs_microphone` and `state_nothing_heard` inline above the button.",
+"Three residual references to a deleted surface inside scenarios the same commit claimed to have updated.",
+""
+]
+},
+{
+"id": "F-30",
+"sev": "Medium",
+"cells": [
+"`docs/modules/feature-stt.md:14`",
+"\"`ModelStore` / `ModelDownloader` — `ggml-small-q5_1.bin` (190 MB) from Hugging Face\"",
+"`FileModelStore(root, model: WhisperModel)` — five models, 32 MB to 574 MB, each with a pinned digest (`WhisperModel.kt:21-25`, `ModelStore.kt:40-53`).",
+"Name the catalogue and the default. The 574 MB entry is a material fact about a device whose thermal ceiling this very file measures at `:68-72`.",
+""
+]
+},
+{
+"id": "F-31",
+"sev": "Medium",
+"cells": [
+"`CONTEXT.md:14-16` (glossary, *Transcript*)",
+"\"records which engine produced it (**on-device Whisper or a remote whisper-server**) and the detected language\"",
+"Three sources now: `SttProvider.kt:13-19` — `LOCAL`, `CLOUD` (an OpenAI-compatible third party), `SERVER`.",
+"The glossary is the declared single home for the term (`DOCMAP.md:106-108`); a term whose definition omits a whole class of producer is the \"one definition per term\" rule failing quietly.",
+""
+]
+},
+{
+"id": "F-32",
+"sev": "Medium",
+"cells": [
+"`docs/evidence/backlog.md:6` and `:77-84`",
+"Header: \"a closed row is marked closed, **with the commit that closed it**\". *Closed* section: \"Rows leave the table above **only** into this list\" … \"*None yet.*\"",
+"27 rows are marked `closed` in the live table and the *Closed* list is empty; `B-027`'s `Home` cell holds prose (\"20 divergences found by an independent read…\") instead of a commit.",
+"The file states a rule and then violates it 27 times. Either move the closed rows or amend the rule — but not both states at once, because the next agent will pick one at random.",
+""
+]
+},
+{
+"id": "F-33",
+"sev": "Medium",
+"cells": [
+"`docs/evidence/verification.md:124-162`",
+"Eleven rows `Observed at d9967a3/325e100/e235a81`, six at `830ad0a`, one at `f770049`.",
+"`git rev-list --count 830ad0a..HEAD` = **10**; `f770049..HEAD` = **9**. Every row in the ledger is behind the tree; none is marked so, because the tool that marks them does not exist (F-15).",
+"See *Verification ledger state* for the per-row reason.",
+""
+]
+},
+{
+"id": "F-34",
+"sev": "Low",
+"cells": [
+"`docs/evidence/audits/2026-09-20-v2-audit-plan.md:4-5`",
+"\"123 JVM tests and 14 instrumented tests\"",
+"122 JVM and 15 instrumented in the six project modules; 123 is the count with `third_party/whisper.cpp`'s own `ExampleUnitTest`, which is not in this build.",
+"Off by one in both directions; the audit's own framing number.",
+""
+]
+},
+{
+"id": "F-35",
+"sev": "Low",
+"cells": [
+"`docs/ux/scenarios.md:375-380`",
+"SCN-015 expected result contains \"Deleting is one tap and costs nothing when it was a miss.\" **twice**, four lines apart.",
+"—",
+"Editing residue from `ff7787b`.",
+""
+]
+},
+{
+"id": "F-36",
+"sev": "Low",
+"cells": [
+"`docs/ux/scenarios.md:22-23`",
+"SCN-014 and SCN-015 carry `Status: draft`.",
+"Both describe behaviour that shipped in `2f91df7`/`ff7787b` and is on the device.",
+"`draft` beside shipped behaviour makes the status column unreadable; the other thirteen say `validated` for behaviour nobody has walked either. Pick one meaning.",
+""
+]
+},
+{
+"id": "F-37",
+"sev": "Low",
+"cells": [
+"`core-common/.../theme/Tokens.kt:39-42` (and `TodayScreen.kt:328`)",
+"`holdButtonHeight` — \"for the one thing the product exists to do\"",
+"There is no hold. The token names a gesture that was deleted.",
+"Rename to `captureButtonHeight`; a name is documentation that the compiler checks.",
+""
+]
+},
+{
+"id": "F-38",
+"sev": "Low",
+"cells": [
+"`app/src/main/res/values/strings.xml:30,63,69`",
+"`action_hold_to_record` (\"Hold to record\"), `state_keep_holding`, `state_allowed` (\"Allowed. Hold the button to record.\")",
+"No Kotlin caller for any of the three. One of them is what `PanelSmokeTest.kt:20` still asserts (F-03).",
+"Delete them, after fixing the test that depends on the dead string.",
+""
+]
+},
+{
+"id": "F-39",
+"sev": "Low",
+"cells": [
+"`docs/evidence/specs/2026-09-19-v1-notes-core-design.md:41` (the drift table)",
+"\"§2 file layout `ui/ModelDownloadDialog.kt` → never existed; the download UI is a state inside `VoiceCaptureSheet.kt`\"",
+"`VoiceCaptureSheet.kt` is gone too. The dated spec's *as built* note is itself now out of date.",
+"The convention here is right — a dated spec keeps its body and carries drift as a table. That table just needs a 2026-09-20 tranche (see *Notes for the merge*).",
+""
+]
+}
+]

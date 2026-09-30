@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every failure the person can see, in one file. The mapper returns ids rather than text so a
+  translation, a copy pass or the brand voice changes this file alone, and so a test can assert
+  which message was chosen without asserting its wording.
+-->
+<resources>
+    <string name="error_permission_blocked">The %1$s is blocked for this app.</string>
+    <string name="error_permission_needed">Dictation needs the %1$s.</string>
+    <string name="error_model_missing">The speech model isn\'t on this headset yet.</string>
+    <!-- T-031 / D-05. The same fact with what it costs. A person met the sentence above, pressed
+         Download, and learned the size on the progress bar — the banner is the first place in the
+         session where the cost is knowable, and it was the last. The second clause is only honest
+         because T-028 put the text editor back. -->
+    <string name="error_model_missing_size">Speech needs a model — %1$s, %2$s. It downloads once and then everything happens on this headset.</string>
+    <string name="error_model_network">The download stopped. Check the network.</string>
+    <string name="error_model_checksum">The downloaded file was corrupt and was removed.</string>
+    <string name="error_model_disk">There isn\'t room on this headset for the speech model.</string>
+    <!-- The same refusal with the two numbers. `G-07`: a download that is refused has to say how
+         much to free, or the person can neither act on it nor disprove it. -->
+    <string name="error_model_disk_detail">There isn\'t room: the speech model needs %1$s and this headset has %2$s free.</string>
+    <string name="error_model_busy">That model is downloading. Cancel the download first.</string>
+    <string name="error_model_cancelled">The download was cancelled.</string>
+    <!-- REQ-061 / M27. It said "The speech server answered 500." and stopped there. Two defects
+         in one sentence: it named the whisper server for a status a CLOUD endpoint raises just
+         as often, and it gave a person nothing to do. true because: SttRouter — this reaches a
+         person only when the remote failed AND there is no local model to fall back to, so the
+         address and key in Settings are the only two things they can change. -->
+    <string name="error_remote_stt">The speech service refused the recording (%1$d). Check its address and key in Settings.</string>
+    <!-- true because: RemoteWhisperClient / CloudTranscriptionClient raise RemoteSttUnreadable only
+         for a successful response with no string `text` in a JSON body (B-244, DEC-0091). -->
+    <string name="error_remote_stt_unreadable">The speech service answered, but not with a transcript. Check its address in Settings.</string>
+    <!-- B-258. true because: VaultExporter raises ExportUnreadable only when a file's READ fails
+         mid-copy, and VaultExport then discards the whole archive — nothing left the headset. No
+         file name: it is a note's UUID, which nothing on the headset can locate (DEC-0071). -->
+    <string name="error_export_recording_unreadable">One recording couldn\'t be read, so nothing was exported and nothing was removed. You can export the notes without recordings.</string>
+    <!-- B-258. A note cannot be left out of a backup, so no partial export is offered. -->
+    <string name="error_export_note_unreadable">One note file couldn\'t be read, so nothing was exported and nothing was removed.</string>
+    <string name="action_export_notes_only">Export notes only</string>
+    <string name="error_stt_failed">Couldn\'t transcribe that. The recording is kept.</string>
+    <!-- REQ-061. One sentence where four named OpenRouter, a service DEC-0020 removed. It is
+         unreachable in any installable build — `:app` does not link `:feature-assistant` — and
+         it exists because `AppError.OpenRouter` is still a shape the mapper must answer for. -->
+    <string name="error_assistant_absent">The assistant is not part of this build.</string>
+    <!-- REQ-061 / M27. true because: CloudTranscriptionClient.kt — it raises `NoApiKey` when the
+         CLOUD TRANSCRIPTION key is missing, and this sentence read "Add an OpenRouter key to use
+         the assistant": the wrong credential, for a feature DEC-0020 deleted, sending the person
+         to look for a field that is not on any screen. -->
+    <string name="error_no_api_key">No key is saved for the cloud service. Add one in Settings.</string>
+    <!-- EN drafts. The brand pack does not exist yet (B-035); `copywriting` owns the final text. -->
+    <!-- %1$s is a NAME resolved from `provider_name_*` below, never the provider's key: these
+         read "No key saved for cloud." until REQ-061, and a person has no thing called `cloud`. -->
+    <string name="error_stt_no_address">No address saved for %1$s. Transcribed on this headset.</string>
+    <string name="error_stt_no_key">No key saved for %1$s. Transcribed on this headset.</string>
+
+    <!-- The two speech providers that can be unconfigured, named as a person would name them.
+         `provider_name_server` uses the product's ONE name for that machine — "whisper server"
+         — which `provider_server` in `:app` spells the same way (REQ-061). -->
+    <string name="provider_name_cloud">the cloud service</string>
+    <string name="provider_name_server">the whisper server</string>
+    <!-- A key the mapper does not recognise. Never printed as itself; see `storageTextFor`'s
+         own note on why a general sentence beats an internal name. -->
+    <string name="provider_name_other">the speech service you chose</string>
+    <string name="error_insecure_url">Only https, or http to a device on your own network.</string>
+    <!-- B-216. A separate sentence from `error_insecure_url` because the refusal is a different
+         one: the hop can be perfectly encrypted and still be somewhere else. The host is named
+         because it is the only part the person can check against the address they typed. -->
+    <string name="error_redirect_refused">That address tried to pass this to %1$s. Nothing was sent.</string>
+    <string name="error_network">No answer from the network.</string>
+    <!-- M12. The address is the only part of a network failure the person can check or correct:
+         they typed it into Settings. Used whenever the caller knows what it was trying to reach. -->
+    <string name="error_network_host">No answer from %1$s.</string>
+    <!-- M12. `AppError.Storage` has carried the operation from the beginning and the mapper threw
+         it away, so a failed export and a keystore that would not open both read as the sentence
+         below — which is about the person's text, for failures their text was never in. Four
+         operations earn their own sentence; the rest fall back to the general one rather than
+         leaking an internal key like `vault.purge` into a person's line of sight. -->
+    <string name="error_storage">Something on this headset\'s storage didn\'t answer. Your text is still here.</string>
+    <string name="error_storage_save">Couldn\'t save. Your text is still here.</string>
+    <string name="error_storage_export">Couldn\'t finish the export. Nothing left this headset and nothing was removed.</string>
+    <string name="error_storage_recording">Couldn\'t delete the recording. It is still on this headset.</string>
+    <string name="error_storage_keystore">Couldn\'t reach this headset\'s secure storage, so the setting wasn\'t saved.</string>
+    <!-- REQ-061 / M27. It was "Something failed: %1$s." filled with a throwable's class name, so
+         a person read "Something failed: NullPointerException." — a stack frame with a full stop
+         after it. true because: UiStateMapper's `Unknown` branch logs the class through `Log2`
+         before returning this, so the diagnosis still leaves the headset with DEC-0023's crash
+         report and no longer arrives in the person's line of sight. -->
+    <string name="error_unknown">Something went wrong that this app has no name for. Nothing was lost.</string>
+
+    <!-- The buttons an error banner can offer. -->
+    <string name="action_dismiss">Dismiss</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_allow">Allow</string>
+    <string name="action_app_settings">App settings</string>
+    <string name="action_download">Download</string>
+    <!-- A failed transfer offers one of these two and never both: the bytes already on the
+         headset are either usable or they are not, and the person is entitled to know which
+         they are agreeing to before a 574 MB model starts again (REQ-047, H8). -->
+    <string name="action_resume_download">Resume</string>
+    <string name="action_download_again">Download again</string>
+    <!-- Not a repair. Some failures cannot be repaired here — the microphone was refused, the
+         model is 190 MB away — and a message whose only control is one the person just declined
+         is a dead end. -->
+    <string name="action_write_note">Write a note instead</string>
+</resources>

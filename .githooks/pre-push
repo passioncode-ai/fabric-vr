@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Refuse a push whose gates have not passed — by EXIT CODE, which is the whole point.
+#
+# `SI-03` was born from a push chained to a `grep`: the command was
+# `check-all.sh 2>&1 | grep -E "ERR|FAIL|^OK: doc" && git commit && git push`, and `grep` exited 0
+# because it matched the documentation gate's OK line, so three `FAILED` tests went out. The rule
+# written that day was "a push is chained to an exit code, never to a grep", and its stated
+# retirement trigger was **this file**: a pre-push hook runs the gates itself, so the chain cannot
+# be built wrong.
+#
+# It was written after the same mistake happened a second time, on 2026-09-21, by the agent that
+# had read the rule earlier in the same session. A rule that depends on remembering it is a rule
+# that fails the moment the run gets long — which is exactly when a push matters most.
+#
+# **The escape hatch is `git push --no-verify`**, and it is not hidden: a hook that cannot be
+# skipped gets uninstalled, and an uninstalled hook protects nothing. Skipping it is a decision a
+# person makes out loud, in a shell, with the reason in their head.
+#
+# Install (once per clone, because git does not track hooks):
+#     git config core.hooksPath .githooks
+#
+# `check-all.sh` needs a JDK. If none is on PATH this hook says so and REFUSES, rather than
+# passing a push it could not check — a hook that skips itself when its tool is missing is the
+# silent-green shape this repository has now found five times.
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+
+# **Drain stdin, or the push dies AFTER the gates pass.**
+#
+# `git push` writes one line per ref — `<local ref> <local sha> <remote ref> <remote sha>` — into
+# this hook's standard input. A hook that never reads it leaves git writing into a pipe whose only
+# reader has exited, and git takes `SIGPIPE`: **exit 141, with `ALL GATES GREEN` and `pre-push:
+# gates green` printed immediately above it and nothing transmitted.** Measured on 2026-09-22,
+# four pushes in a row, each paying a full ten-minute gate run for a refusal that had nothing to do
+# with the tree — and the remote sat three commits behind while every local signal said the work
+# had shipped. It looks exactly like a network failure and it is not.
+#
+# The window is small when the hook exits quickly, which is why this went unseen: `check-all.sh`
+# takes minutes, so git has always finished writing by the time the gates report — unless the run
+# is slow enough, or the ref list long enough, that it has not. Reading it costs nothing and makes
+# the failure impossible rather than unlikely.
+#
+# It is read and discarded deliberately: this hook's verdict is about the TREE, and a rule that
+# depended on which refs were being pushed would pass a broken tree onto a branch nobody watches.
+# `[ -t 0 ]` guards the case where somebody runs this file by hand from a shell: there is no git
+# on the other end, `cat` would wait for a person to press Ctrl-D, and a hook that hangs when
+# invoked directly is a hook nobody debugs twice.
+[ -t 0 ] || cat > /dev/null || :
+
+# ---------- the verdict: a receipt, not a ten-minute gate run inside an open socket ----------
+#
+# **This hook used to run `scripts/check-all.sh` itself, and that is why every push failed.**
+# `git push` opens its connection to the remote BEFORE running `pre-push` — it needs the remote
+# refs to build this hook's input — and holds it open for as long as the hook takes. The suite
+# takes minutes; GitHub closes an idle SSH session well inside that window. So git ran the gates,
+# printed `ALL GATES GREEN` and `pre-push: gates green`, and then died writing the pack:
+# **`SIGPIPE`, exit 141, nothing transmitted.** Four times in a row on 2026-09-22, each one paying
+# a full gate run for a failure that had nothing to do with the tree, while the remote sat three
+# commits behind and every local signal said the work had shipped.
+#
+# Measured rather than reasoned: the same push with `check-all.sh` stubbed to `exit 0` succeeds;
+# with the real script it exits 141. The difference is duration, not verdict.
+#
+# **`SI-03` is unchanged and better served.** Its rule is that a push is chained to an EXIT CODE,
+# never to a grep — and the receipt is written on `check-all.sh`'s last line, which `set -eu`
+# makes reachable only on success. A caller still cannot manufacture a green by matching an `OK:`
+# line, and now cannot manufacture one by being patient either.
+#
+# The receipt names the INDEX tree, so it survives the commit: the gates normally run before
+# committing, and committing does not change what they read. An unstaged edit to a tracked file
+# DOES change it, and is refused — that is the point.
+# The tree the gates read, as a value, computed WITHOUT writing anything.
+#
+# Not `git write-tree`: that reflects the INDEX and writes tree objects, so it would change the
+# moment work is staged and — worse — would report the real repository's index when run inside
+# `selftest.sh`'s copy, whose `.git` is a symlink to it. Hashing the CONTENT of the tracked files
+# is invariant across `git add` and `git commit`, which is what makes a receipt written before the
+# commit still true at the push, and it is read-only, which is what makes it safe to exercise
+# inside a copied tree.
+gates_tree_id() {
+  git ls-files -z 2>/dev/null | xargs -0 shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1
+}
+
+RECEIPT=${GATES_RECEIPT:-$(git rev-parse --git-dir)/gates-receipt}
+TREE="$(gates_tree_id)"
+
+if [ ! -f "$RECEIPT" ]; then
+  echo "pre-push: REFUSED — no gate receipt. Run this first, and let it finish:" >&2
+  echo "          bash scripts/check-all.sh" >&2
+  echo "          (--no-verify skips this, deliberately, and says so in your shell history.)" >&2
+  exit 1
+fi
+
+if [ "$(cat "$RECEIPT")" != "$TREE" ]; then
+  echo "pre-push: REFUSED — the gates passed on a different tree than the one being pushed." >&2
+  echo "          receipt: $(cat "$RECEIPT")" >&2
+  echo "          pushing: $TREE" >&2
+  echo "          Re-run: bash scripts/check-all.sh" >&2
+  exit 1
+fi
+
+echo "pre-push: gates green on this exact tree ($TREE)"
+exit 0

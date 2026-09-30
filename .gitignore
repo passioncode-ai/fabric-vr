@@ -1,0 +1,33 @@
+# Build and tooling output
+.gradle/
+/.gradle/
+build/
+**/build/
+.cxx/
+.kotlin/
+graphify-out/
+.task-pipeline/
+
+# Local machine state — never committed
+/local.properties
+/keystore.properties
+
+# Signing material — never committed, and **there is no recovery if it is lost**. A signed build
+# on a headset can only be upgraded by the same key; losing it turns every future upgrade into an
+# uninstall that takes the database, the vault and the 190 MB model with it (`DEC-0049`, `H-23`).
+# Unscoped on purpose: a key does not become safe by sitting in a subdirectory.
+*.keystore
+*.jks
+*.p12
+*.pepk
+release-lineage.bin
+*.iml
+.idea/
+.DS_Store
+
+# Speech models are downloaded, never committed (190 MB). Scoped rather than a bare `*.bin`:
+# an unscoped rule silently swallows any binary a future module legitimately ships.
+**/models/*.bin
+/app/src/main/assets/*.bin
+docs/ux/__pycache__/
+__pycache__/

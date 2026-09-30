@@ -1,0 +1,16 @@
+# Paths a document may name that do not resolve — every line needs a reason.
+#
+# A gate with a silent exception is a gate that stops being read. Each entry is
+# `<path><TAB or spaces><reason>`, and the gate REPORTS a line whose path has since started
+# resolving, so this file shrinks as reality catches up instead of quietly accumulating.
+#
+# It is not a place to park a broken citation. A stale `file:line` in a document is the
+# defect the check exists to find; the only legitimate entries are paths that are
+# deliberately absent.
+
+keystore.properties          untracked by design; the sample beside it is what exists
+release.keystore             the signing key, never in the repository (T-039 gives it a custodian)
+local.properties             per-machine SDK location, untracked
+graphify-out/graph.json      written by graphify, which needs an API key not available here (board B-029)
+docs/adr/                    the alternative decision home this project did not choose; DOCMAP names the shape, not a file
+references/documentation.md  a page of the task-pipeline skill, not of this repository

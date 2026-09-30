@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Пульт Fabric на Quest и телефоне</title>
+<meta name="description" content="Предложение 2026-09-28: fabric-vr как пульт Fabric — бренд-аудит, фичи, макеты Quest и телефона, архитектура, дорожная карта.">
+<style>
+/* Report chrome — PassionCode v1.1.0 tokens, copied literally from
+   fabric: apps/desktop/src/renderer/src/tokens.passioncode.css:3-81 */
+:root{
+  --pc-bg:#0a070d;--pc-panel:#110c15;--pc-panel-raised:#1b1420;
+  --pc-text:#fff9f0;--pc-text-muted:#b6aabc;--pc-border:#342b3a;--pc-border-strong:#5c4e63;
+  --pc-accent:#ffd21a;--pc-accent-hover:#ffdf5e;--pc-on-accent:#211900;--pc-accent-soft:#30270e;
+  --pc-link:#ffd21a;--pc-focus:#ffd21a;
+  --pc-positive:#79d49a;--pc-positive-soft:#12291c;--pc-warning:#f6ba75;--pc-warning-soft:#332314;
+  --pc-negative:#ff969f;--pc-negative-soft:#35191f;--pc-info:#a6bfff;--pc-info-soft:#18243d;
+  --pc-font:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --pc-font-data:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --pc-radius-control:8px;--pc-radius-panel:16px;--pc-radius-feature:24px;--pc-radius-pill:999px;
+  --pc-space-1:4px;--pc-space-2:8px;--pc-space-3:12px;--pc-space-4:16px;--pc-space-5:24px;--pc-space-6:32px;
+  --pc-ease:cubic-bezier(.2,0,0,1);--pc-dur-hover:120ms;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --pc-bg:#ffffff;--pc-panel:#f7f5f8;--pc-panel-raised:#ffffff;--pc-text:#211725;--pc-text-muted:#655769;
+    --pc-border:#ddd4df;--pc-border-strong:#8f8095;--pc-accent-soft:#fff2b8;--pc-link:#806200;--pc-focus:#806200;
+    --pc-positive:#246b3b;--pc-positive-soft:#e4f3e8;--pc-warning:#8a4b0b;--pc-warning-soft:#fff0dc;
+    --pc-negative:#a82f44;--pc-negative-soft:#fde8ec;--pc-info:#345da7;--pc-info-soft:#e8efff;
+    color-scheme:light;
+  }
+}
+@media (prefers-reduced-motion: reduce){:root{--pc-dur-hover:0ms}}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--pc-bg);color:var(--pc-text);font:16px/1.6 var(--pc-font)}
+a{color:var(--pc-link)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--pc-focus);outline-offset:1px}
+code,.mono{font-family:var(--pc-font-data);font-size:.86em}
+.wrap{max-width:1120px;margin:0 auto;padding:0 16px}
+header.top{border-bottom:1px solid var(--pc-border);padding:var(--pc-space-6) 0 var(--pc-space-5)}
+.brandline{display:flex;align-items:center;gap:12px;color:var(--pc-text-muted);font-size:14px}
+.brandline svg{width:32px;height:32px}
+h1{font-size:clamp(28px,4vw,40px);line-height:1.1;letter-spacing:-.02em;margin:16px 0 8px}
+h2{font-size:24px;letter-spacing:-.01em;margin:56px 0 12px;padding-top:8px;border-top:1px solid var(--pc-border)}
+h3{font-size:18px;margin:28px 0 8px}
+.lede{font-size:18px;color:var(--pc-text-muted);max-width:780px;margin:0}
+.meta{font-size:13px;color:var(--pc-text-muted);margin-top:12px}
+p,li{max-width:820px}
+nav.toc{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 0}
+nav.toc a{font-size:13px;text-decoration:none;color:var(--pc-text);border:1px solid var(--pc-border-strong);border-radius:var(--pc-radius-pill);padding:4px 12px}
+nav.toc a:hover{border-color:var(--pc-accent)}
+.callout{border:1px solid var(--pc-border-strong);border-left:3px solid var(--pc-accent);border-radius:var(--pc-radius-control);padding:12px 16px;background:var(--pc-panel);margin:16px 0}
+.callout.warn{border-left-color:var(--pc-warning)}
+.grid{display:grid;gap:12px}
+.g3{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.card{background:var(--pc-panel);border:1px solid var(--pc-border);border-radius:var(--pc-radius-panel);padding:16px}
+.card h4{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--pc-text-muted)}
+.card p{margin:0;font-size:15px}
+.tbl{overflow-x:auto;margin:12px 0;border:1px solid var(--pc-border);border-radius:var(--pc-radius-control)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:720px}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--pc-border)}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--pc-text-muted);background:var(--pc-panel)}
+tr:last-child td{border-bottom:0}
+td small{color:var(--pc-text-muted)}
+/* State chip — the word carries the state; colour lives on border + dot only (fabric: docs/brand/ui.md:116-117) */
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:1px 8px;border:1px solid var(--pc-border-strong);border-radius:var(--pc-radius-pill);color:var(--pc-text);white-space:nowrap;font-weight:600}
+.chip::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--c,var(--pc-text-muted))}
+.chip.ok{--c:var(--pc-positive);border-color:var(--pc-positive)}
+.chip.no{--c:var(--pc-negative);border-color:var(--pc-negative)}
+.chip.part{--c:var(--pc-warning);border-color:var(--pc-warning)}
+.chip.info{--c:var(--pc-info);border-color:var(--pc-info)}
+.chip.plain::before{display:none}
+figure{margin:20px 0}
+figcaption{font-size:13px;color:var(--pc-text-muted);margin-top:8px;max-width:820px}
+.scroller{overflow-x:auto;padding-bottom:8px}
+.phones{display:flex;flex-wrap:wrap;gap:16px;justify-content:flex-start}
+ol.steps li{margin-bottom:8px}
+footer{border-top:1px solid var(--pc-border);margin-top:64px;padding:24px 0 48px;font-size:13px;color:var(--pc-text-muted)}
+
+/* ============ MOCKUP SCOPE ============
+   Quest adaptation of PassionCode v1.1.0. Always dark: the product is dark-first
+   and passthrough-backed. Values proposed here, not yet a decision:
+   bg/panel lifted to the 13/255 channel floor (fabric-vr DEC-0085),
+   control edge raised to 3:1 (fabric-vr DEC-0086). */
+.m{
+  --v-bg:#130e17;--v-panel:#1b1420;--v-raised:#241b2a;--v-line:#342b3a;--v-edge:#6e5f76;
+  --v-text:#fff9f0;--v-muted:#b6aabc;--v-accent:#ffd21a;--v-on-accent:#211900;
+  --v-info:#a6bfff;--v-neg:#ff969f;--v-warn:#f6ba75;--v-pos:#79d49a;
+  color:var(--v-text);font-family:var(--pc-font);color-scheme:dark;
+}
+.m .chip{color:var(--v-text);border-color:var(--v-edge)}
+.m .chip.go{--c:var(--v-info);border-color:var(--v-info)}
+.m .chip.blk{--c:var(--v-neg);border-color:var(--v-neg)}
+.m .chip.idle{--c:var(--v-warn);border-color:var(--v-warn)}
+.m .chip.good{--c:var(--v-pos);border-color:var(--v-pos)}
+.m .chip.end::before{background:var(--v-muted)}
+.m button{font:inherit;color:inherit;cursor:pointer}
+.m .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--v-edge);background:transparent;color:var(--v-text);font-weight:600;padding:0 16px}
+.m .btn.primary{background:var(--v-accent);border-color:var(--v-accent);color:var(--v-on-accent)}
+.m .btn.danger{border-color:var(--v-neg);color:var(--v-neg)}
+.m .btn.quiet{border-color:transparent;color:var(--v-muted)}
+@media (prefers-reduced-motion: no-preference){.m .btn{transition:opacity var(--pc-dur-hover) var(--pc-ease)}}
+.m .btn:hover{opacity:.88}
+.m .muted{color:var(--v-muted)}
+.m .mono{font-family:var(--pc-font-data)}
+
+/* Quest panel: 1024×640 dp (fabric-vr ImmersiveActivity.kt:382-411), rendered 1 dp = 1 px */
+.vr{width:1024px;height:640px;background:var(--v-bg);border-radius:22px;border:1px solid var(--v-line);display:grid;grid-template-rows:64px 1fr 96px;overflow:hidden;box-shadow:0 20px 60px #00000080;font-size:17px;line-height:1.35}
+.vr .hdr{display:flex;align-items:center;gap:14px;padding:0 20px;border-bottom:1px solid var(--v-line)}
+.vr .hdr svg{width:34px;height:34px}
+.vr .hdr .name{font-weight:700;font-size:20px}
+.vr .hdr .sp{flex:1}
+.vr .hdr .conn{font-size:14px;color:var(--v-muted);display:flex;align-items:center;gap:8px}
+.vr .hdr .btn{height:56px;min-width:56px}
+.vr .body{display:grid;grid-template-columns:180px 1fr 284px;min-height:0}
+.vr .rail{border-right:1px solid var(--v-line);padding:12px 10px;display:flex;flex-direction:column;gap:6px}
+.vr .rail button{height:72px;border-radius:12px;border:0;background:transparent;text-align:left;padding:0 14px;display:flex;align-items:center;justify-content:space-between;font-size:17px;color:var(--v-muted)}
+.vr .rail button.on{background:var(--v-raised);color:var(--v-text);font-weight:700;box-shadow:inset 3px 0 0 var(--v-accent)}
+.vr .rail .count{font-size:14px;border:1px solid var(--v-neg);border-radius:999px;padding:0 9px;color:var(--v-text)}
+.vr .main{padding:14px 16px;overflow:hidden;display:flex;flex-direction:column;gap:12px}
+.vr .sect{font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--v-muted);display:flex;justify-content:space-between}
+.q{background:var(--v-panel);border:1px solid var(--v-line);border-radius:16px;padding:12px 16px}
+.q .top{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--v-muted)}
+.q .top .sp{flex:1}
+.q .text{margin:6px 0 10px;font-size:18px}
+.q .opts{display:flex;gap:10px;flex-wrap:wrap}
+.q .opts{flex-wrap:nowrap}
+.q .opts .btn{height:72px;min-width:120px}
+.q .opts .btn.quiet{min-width:0;padding:0 12px}
+.vr .side{border-left:1px solid var(--v-line);padding:14px 14px;display:flex;flex-direction:column;gap:6px;overflow:hidden}
+.run{min-height:72px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 8px;padding:8px 10px;border-radius:12px;border:1px solid transparent}
+.run:hover{border-color:var(--v-edge)}
+.run .who{font-size:15px;font-weight:600}
+.run .what{grid-column:1/-1;font-size:14px;color:var(--v-muted)}
+.vr .cap{border-top:1px solid var(--v-line);display:flex;align-items:center;gap:14px;padding:0 20px}
+.vr .cap .rec{height:72px;min-width:220px;font-size:18px}
+.vr .cap .rec .dot{width:14px;height:14px;border-radius:50%;background:var(--v-on-accent)}
+.vr .cap .route{height:72px;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding:0 16px;min-width:260px;font-weight:400}
+.vr .cap .route b{font-size:17px}
+.vr .cap .route span{font-size:13px;color:var(--v-muted)}
+.vr .cap .hint{font-size:14px;color:var(--v-muted);flex:1}
+
+/* Run detail panel (Claim / Tail) */
+.vr2{width:1024px;height:640px;background:var(--v-bg);border-radius:22px;border:1px solid var(--v-line);overflow:hidden;box-shadow:0 20px 60px #00000080;display:grid;grid-template-rows:64px 1fr 96px;font-size:17px;line-height:1.35}
+.vr2 .hdr{display:flex;align-items:center;gap:14px;padding:0 20px;border-bottom:1px solid var(--v-line)}
+.vr2 .hdr .btn{height:56px}
+.vr2 .hdr .t{font-weight:700;font-size:20px}
+.vr2 .hdr .sp{flex:1}
+.vr2 .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px 20px;min-height:0}
+.claim{background:var(--v-panel);border:1px solid var(--v-line);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.claim h5{margin:0;font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--v-muted);font-weight:600;display:flex;justify-content:space-between}
+.claim.stale{border-color:var(--v-warn)}
+.tail{font-family:var(--pc-font-data);font-size:14px;line-height:1.55;color:var(--v-muted);background:#0f0b12;border:1px solid var(--v-line);border-radius:8px;padding:10px 12px;flex:1;overflow:hidden;white-space:pre}
+.tail b{color:var(--v-text);font-weight:600}
+.vr2 .act{border-top:1px solid var(--v-line);display:flex;align-items:center;gap:12px;padding:0 20px}
+.vr2 .act .btn{height:72px;min-width:170px}
+.vr2 .act .note{font-size:13px;color:var(--v-muted);flex:1}
+
+/* Role workspace panel */
+.vr3{width:640px;height:640px;background:var(--v-bg);border-radius:22px;border:1px solid var(--v-line);overflow:hidden;box-shadow:0 20px 60px #00000080;display:grid;grid-template-rows:64px 1fr;font-size:17px}
+.vr3 .hdr{display:flex;align-items:center;gap:12px;padding:0 20px;border-bottom:1px solid var(--v-line)}
+.vr3 .hdr .t{font-weight:700;font-size:20px}
+.vr3 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px 20px;align-content:start}
+.tile{background:var(--v-panel);border:1px solid var(--v-line);border-radius:16px;padding:14px 16px;min-height:120px;display:flex;flex-direction:column;justify-content:space-between}
+.tile .lbl{font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--v-muted)}
+.tile .val{font-size:34px;font-weight:700;letter-spacing:-.02em}
+.tile .src{font-size:13px;color:var(--v-muted)}
+.tile.wide{grid-column:1/-1}
+.spark{height:48px;width:100%}
+
+/* Scene overview — schematic, not to scale */
+.scene{position:relative;width:1080px;height:470px;border-radius:16px;overflow:hidden;border:1px solid var(--pc-border);background:linear-gradient(180deg,#3b3632 0%,#4a433c 58%,#2c2622 58.2%,#231e1b 100%)}
+.scene .lbl{position:absolute;font-size:12px;color:#fff9f0;background:#0a070dcc;padding:2px 8px;border-radius:999px;border:1px solid #5c4e63}
+.scene .vd{position:absolute;left:250px;top:40px;width:560px;height:330px;border-radius:10px;background:#1e1e22;border:1px solid #55555c;box-shadow:0 12px 40px #0008;overflow:hidden}
+.scene .vd .bar{height:22px;background:#2a2a30;display:flex;gap:6px;align-items:center;padding:0 8px}
+.scene .vd .bar i{width:9px;height:9px;border-radius:50%;background:#55555c;display:block}
+.scene .vd .code{padding:12px 14px;font-family:var(--pc-font-data);font-size:11px;line-height:1.6;color:#8b8b95;white-space:pre}
+.scene .pn{position:absolute;border-radius:12px;background:#130e17;border:1px solid #342b3a;box-shadow:0 12px 40px #0009;padding:10px;color:#fff9f0;font-size:11px}
+.scene .pn b{display:block;font-size:12px;margin-bottom:6px}
+.scene .pn .ln{height:8px;border-radius:4px;background:#241b2a;margin:6px 0}
+.scene .pn .ln.g{background:#ffd21a;width:40%}
+.scene .pn .ln.r{border:1px solid #ff969f;background:transparent}
+.scene .pn.main{right:24px;top:70px;width:230px;height:250px;transform:perspective(800px) rotateY(-14deg)}
+.scene .pn.ws{left:24px;top:90px;width:200px;height:210px;transform:perspective(800px) rotateY(14deg)}
+.scene .pn.cap{left:420px;top:392px;width:230px;height:54px;padding:8px 10px;display:flex;align-items:center;gap:8px}
+.scene .pn.cap .d{width:26px;height:26px;border-radius:50%;background:#ffd21a;flex:none}
+
+/* Phone frames — 360×760 CSS px, mobile type ramp */
+.phone{width:350px;height:760px;border-radius:40px;border:9px solid #1f1a22;background:var(--v-bg);overflow:hidden;position:relative;display:flex;flex-direction:column;font-size:16px;line-height:1.4;box-shadow:0 20px 60px #00000080}
+.phone .sb{height:34px;display:flex;justify-content:space-between;align-items:center;padding:0 22px;font-size:13px;color:var(--v-muted);flex:none}
+.phone .ph{display:flex;align-items:center;gap:10px;padding:6px 16px 10px;flex:none}
+.phone .ph svg{width:28px;height:28px}
+.phone .ph .t{font-weight:700;font-size:20px;flex:1}
+.phone .ph .icon{width:44px;height:44px;border-radius:8px;border:1px solid var(--v-edge);display:grid;place-items:center;font-size:18px}
+.phone .scroll{flex:1;overflow:hidden;padding:0 16px;display:flex;flex-direction:column;gap:10px}
+.phone .sect{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--v-muted);margin-top:4px;display:flex;justify-content:space-between}
+.phone .q{padding:12px 14px;border-radius:14px}
+.phone .q .text{font-size:16px;margin:6px 0 10px}
+.phone .q .opts .btn{height:44px;min-width:0;flex:1;font-size:15px}
+.phone .q .top{font-size:13px}
+.phone .run{min-height:56px;padding:6px 8px;background:var(--v-panel);border:1px solid var(--v-line)}
+.phone .run .who{font-size:15px}
+.phone .run .what{font-size:13px}
+.phone .tabs{flex:none;height:72px;border-top:1px solid var(--v-line);display:grid;grid-template-columns:repeat(4,1fr);font-size:12px;color:var(--v-muted)}
+.phone .tabs div{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.phone .tabs div.on{color:var(--v-text);font-weight:700;box-shadow:inset 0 2px 0 var(--v-accent)}
+.phone .tabs .g{font-size:18px}
+.phone .fab{position:absolute;right:18px;bottom:88px;height:56px;padding:0 18px;border-radius:999px;background:var(--v-accent);color:var(--v-on-accent);font-weight:700;display:flex;align-items:center;gap:8px;box-shadow:0 8px 24px #0008}
+.phone .fab .dot{width:12px;height:12px;border-radius:50%;background:var(--v-on-accent)}
+.phone .box{background:var(--v-panel);border:1px solid var(--v-line);border-radius:14px;padding:12px 14px}
+.phone .box h6{margin:0 0 6px;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--v-muted);font-weight:600}
+.phone .eff{font-family:var(--pc-font-data);font-size:12.5px;line-height:1.55;color:var(--v-muted);white-space:pre-wrap}
+.phone .eff b{color:var(--v-text);font-weight:600}
+.phone .bar{flex:none;padding:12px 16px 18px;border-top:1px solid var(--v-line);display:flex;gap:10px}
+.phone .bar .btn{height:52px;flex:1;font-size:16px}
+.phone .seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--v-edge);border-radius:8px;overflow:hidden}
+.phone .seg div{height:44px;display:grid;place-items:center;font-size:14px;color:var(--v-muted)}
+.phone .seg div.on{background:var(--v-raised);color:var(--v-text);font-weight:700;box-shadow:inset 0 -2px 0 var(--v-accent)}
+.phone .field{background:var(--v-raised);border:1px solid var(--v-edge);border-radius:8px;padding:10px 12px;font-size:15px}
+.phone .timer{display:flex;align-items:center;gap:10px;font-size:15px}
+.phone .timer .rd{width:10px;height:10px;border-radius:50%;background:var(--v-neg)}
+.caret{display:inline-block;width:2px;height:1em;background:var(--v-text);vertical-align:-2px;margin-left:2px}
+@media (prefers-reduced-motion: no-preference){.caret{animation:blink 1s steps(1) infinite}@keyframes blink{50%{opacity:0}}}
+
+.tile-icons{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+.tile-icons figure{margin:0;width:200px}
+.tile-icons svg{width:120px;height:120px;display:block}
+
+.arch svg{width:100%;height:auto;max-width:1080px;display:block}
+.arch text{font-family:var(--pc-font);fill:var(--pc-text)}
+.arch .mut{fill:var(--pc-text-muted)}
+.arch .box{fill:var(--pc-panel);stroke:var(--pc-border-strong)}
+.arch .box.new{stroke:var(--pc-accent);stroke-dasharray:6 4}
+.arch .box.plan{stroke:var(--pc-border-strong);stroke-dasharray:3 4}
+.arch .ar{stroke:var(--pc-text-muted);fill:none;stroke-width:1.5}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="rind-gradient" x1="250" y1="140" x2="790" y2="900" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2D0039"/><stop offset="1" stop-color="#4B0354"/></linearGradient>
+    <linearGradient id="interior-gradient" x1="300" y1="220" x2="730" y2="870" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#F20673"/><stop offset="1" stop-color="#D90066"/></linearGradient>
+    <linearGradient id="flesh-gradient" x1="410" y1="250" x2="620" y2="510" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFD21A"/><stop offset="1" stop-color="#F5B800"/></linearGradient>
+    <linearGradient id="seed-gradient" x1="470" y1="300" x2="555" y2="440" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#41054B"/><stop offset="1" stop-color="#26002F"/></linearGradient>
+  </defs>
+  <!-- Passion fruit mark, from fabric: assets/brand/favicon/source/passioncode-passion-fruit.svg -->
+  <symbol id="pf" viewBox="0 0 1024 1024">
+    <path fill="url(#rind-gradient)" d="M512 92c-23 0-42 12-53 32-16 29-54 53-110 98-110 89-177 208-177 342 0 214 134 352 340 368 206-16 340-154 340-368 0-134-67-253-177-342-56-45-94-69-110-98-11-20-30-32-53-32Z"/>
+    <path fill="url(#interior-gradient)" d="M512 181c-18 0-37 7-58 17-145 70-239 213-239 365 0 185 115 306 297 324 182-18 297-139 297-324 0-152-94-295-239-365-21-10-40-17-58-17Z"/>
+    <g fill="url(#flesh-gradient)">
+      <path d="M512 230c-62 0-113 42-113 101 0 64 52 136 98 155 9 4 21 4 30 0 46-19 98-91 98-155 0-59-51-101-113-101Z"/>
+      <path id="pf-ul" d="M355 359c-20-1-41 18-62 48-32 45-51 90-46 141 5 52 31 76 69 66 35-9 91-35 119-54 20-13 23-38 9-65l-58-105c-10-18-19-30-31-31Z"/>
+      <use href="#pf-ul" transform="translate(1024 0) scale(-1 1)"/>
+      <path id="pf-ll" d="M437 599c-30 1-66 18-99 41-40 28-58 61-53 93 5 40 46 66 88 81 48 17 90 16 112-4 16-15 14-42 13-72l-2-78c-1-39-24-62-59-61Z"/>
+      <use href="#pf-ll" transform="translate(1024 0) scale(-1 1)"/>
+      <circle cx="512" cy="555" r="43"/>
+    </g>
+    <g fill="url(#seed-gradient)">
+      <ellipse cx="512" cy="366" rx="43" ry="76"/>
+      <ellipse cx="350" cy="500" rx="70" ry="37" transform="rotate(20 350 500)"/>
+      <ellipse cx="674" cy="500" rx="70" ry="37" transform="rotate(-20 674 500)"/>
+      <ellipse cx="408" cy="699" rx="35" ry="68" transform="rotate(36 408 699)"/>
+      <ellipse cx="616" cy="699" rx="35" ry="68" transform="rotate(-36 616 699)"/>
+    </g>
+  </symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brandline"><svg aria-hidden="true"><use href="#pf"/></svg><span>fabric-vr · предложение · 2026-09-28</span></div>
+    <h1>Fabric на Quest и телефоне:<br>пульт Fabric</h1>
+    <p class="lede">Идея: заметки, голос, Project'ы, агенты, команды и дашборды в одном пульте, отдельно для VR и для мобильного. Здесь проверено, насколько fabric-vr соответствует брендбуку Fabric, и показано, каким он станет в роли пульта: фичи, макеты, архитектура и дорожная карта.</p>
+    <p class="meta">Статус: <b>принято оператором 2026-09-29</b> — <code>DEC-0100</code> в этом репозитории и ADR-0088 в <code>fabric</code>. Четыре вопроса §10 (имя, хост relay, порядок iOS, место relay относительно R0) остаются открытыми, их единственный дом — таблица <i>Open</i> в ADR-0088. Вопрос 3 закрыт ADR-0083. Сам отчёт — запись 2026-09-28; исправлена только фраза о Fabric Dashboards. Все факты сопровождаются путём к файлу; путь без префикса ведёт в этот репозиторий, путь <code>fabric:</code> — в репозиторий организации <code>fabric</code>.</p>
+    <nav class="toc" aria-label="Содержание">
+      <a href="#tldr">1 · Коротко</a><a href="#brief">2 · Бриф</a><a href="#brand">3 · Бренд</a><a href="#define">4 · Что это</a><a href="#features">5 · Фичи</a><a href="#mockups">6 · Макеты</a><a href="#arch">7 · Архитектура</a><a href="#repo">8 · Перестройка</a><a href="#road">9 · Дорожная карта</a><a href="#decide">10 · Решения</a><a href="#src">11 · Источники</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<h2 id="tldr">1 · Коротко</h2>
+<div class="grid g3">
+  <div class="card"><h4>Бренд</h4><p><span class="chip no">не вписываемся</span><br>По структуре fabric-vr близок к бренду: тёмный фон, один акцент, волосяные линии. Визуально это другой бренд: бирюза <code>#6FD3C7</code> на сине-чёрном вместо золота PassionCode <code>#ffd21a</code> на сливово-чёрном, системный шрифт вместо Inter, нет <code>docs/brand</code>. Исправляется за один этап, без зависимостей.</p></div>
+  <div class="card"><h4>Продукт</h4><p><span class="chip info">переопределить</span><br>Сейчас это «VR Notes» (<code>DEC-0064</code>). Предлагаю пульт Fabric: <b>Внимание</b> (что ждёт вас), <b>Project'ы</b>, <b>Agent'ы и run'ы</b>, <b>Захват</b> (заметка, голос, команда), <b>Role workspace</b> (дашборды). Одно ядро для Quest и телефона.</p></div>
+  <div class="card"><h4>Главный блокер</h4><p><span class="chip part">вне этого репо</span><br>Fabric работает только на Mac, по loopback. Удалённой поверхности нет. Сам Fabric называет недостающую часть: небольшой постоянно работающий relay (<code>fabric: docs/architecture/telegram-surface.md:56-73</code>) и northbound MCP, у которого пока есть «только архитектура» (<code>fabric: docs/architecture/mcp-control-surface.md:5</code>). Без них пульт умеет только заметки.</p></div>
+</div>
+<div class="callout"><b>Что есть уже сегодня и переходит в пульт без изменений:</b> захват голоса одним нажатием, whisper.cpp на шлеме, Markdown-хранилище, экспорт и импорт, 2D-панель и Space. Всё это превращается в модуль «Захват». Сейчас он пишет в локальное хранилище; после появления relay он также будет отправлять в Fabric (память Project'а или черновик задачи).</div>
+
+<h2 id="brief">2 · Бриф и что опровергнет дизайн</h2>
+<div class="tbl"><table>
+<tr><th style="width:170px">Поверхность</th><td>Product UI: панель Quest 1024×640 dp над passthrough рядом с Meta Virtual Display, плюс экран телефона. Это не лендинг: кинематографичного движения нет.</td></tr>
+<tr><th>Работа</th><td>«Надел шлем или открыл телефон — за 5 секунд понял, что ждёт именно меня, ответил, надиктовал мысль в нужный Project». Трассируется к <code>JTBD-01</code> (захват за 10 с, <code>docs/ux/foundation.md:42</code>). Новые JTBD «ответить Fabric» и «увидеть застрявшего Agent'а» пока не заведены; это отмечено в §8.</td></tr>
+<tr><th>Ограничения</th><td>Токены PassionCode v1.1.0 (<code>fabric: apps/desktop/src/renderer/src/tokens.passioncode.css</code>). Пол канала 13/255 для дисплея шлема (<code>DEC-0085</code>). Контур контрола ≥ 3:1 и цели ≥ 72 dp (<code>DEC-0086</code>). Слово обозначает состояние, цвет стоит только на рамке и точке (<code>fabric: docs/brand/ui.md:116-117</code>).</td></tr>
+<tr><th>Фальсификаторы</th><td>1) За 5 с на главном экране нельзя назвать число вопросов, которые ждут ответа, и заблокированного Agent'а.<br>2) На ответ на вопрос уходит больше одного нажатия после того, как вопрос виден.<br>3) Состояние run'а понятно только по цвету.<br>4) Действие с внешним эффектом выполняется без показа эффекта до запуска.<br>5) Клиент показывает «остановлен» до того, как Fabric подтвердил остановку.</td></tr>
+<tr><th>Калибровка</th><td><code>DESIGN_VARIANCE 4</code>: предсказуемая сетка «rail · главная колонка · боковая колонка», как у desktop-Fabric, а не как у маркетинговой страницы.<br><code>MOTION_INTENSITY 2</code>: только hover-opacity 120 мс и мигающий курсор при стриминге. Это единственный допустимый цикл, и при <code>prefers-reduced-motion</code> он останавливается.<br><code>VISUAL_DENSITY 5</code>: ниже desktop-Fabric (там компактные строки 14 px), потому что в шлеме цель 72 dp и основной текст 17 sp. Контрпример — плотная доска desktop-Fabric: в шлеме её не повторяем.</td></tr>
+<tr><th>Стиль</th><td>Отдельного style pack sheleg-design здесь нет. Бренд сохраняется, поэтому идентичность задаёт собственная система PassionCode, адаптированная под шлем. Правила workbench для AI-поверхностей применяются: честные состояния, превью эффекта, run log как первоклассная поверхность.</td></tr>
+</table></div>
+
+<h2 id="brand">3 · Вписываемся ли мы в брендбук Fabric</h2>
+<p>Слева правило брендбука, в середине то, что в <code>fabric-vr</code> сейчас. Токены лежат в <code>core-common/src/main/kotlin/ai/passioncode/fabricvr/common/theme/Tokens.kt</code>.</p>
+<div class="tbl"><table>
+<tr><th>Аспект</th><th>Брендбук Fabric / PassionCode</th><th>fabric-vr сейчас</th><th>Вердикт</th></tr>
+<tr><td>Акцент</td><td>золото <code>--pc-accent #ffd21a</code>, текст на нём <code>#211900</code> <small>(tokens.passioncode.css)</small></td><td>бирюза <code>accent #6FD3C7</code>, <code>accentInk #0D201D</code> <small>(Tokens.kt:61,67)</small></td><td><span class="chip no">нет</span></td></tr>
+<tr><td>Фон и поверхности</td><td>сливово-чёрный <code>#0a070d / #110c15 / #1b1420</code></td><td>сине-чёрный <code>ink #0D1116 / surface #141922 / raised #1C232E</code> <small>(Tokens.kt:22,42-43)</small></td><td><span class="chip no">нет</span></td></tr>
+<tr><td>Пол 13/255 в шлеме</td><td>в <code>#0a070d</code> каналы <code>10,7,13</code>, в <code>#110c15</code> — <code>17,12,21</code>: <b>ниже пола</b></td><td>соблюдён, проверяет <code>PaletteFloorTest</code> <small>(DEC-0085)</small></td><td><span class="chip part">нужна VR-адаптация</span></td></tr>
+<tr><td>Контур контрола</td><td><code>--pc-border-strong #5c4e63</code> даёт 2.33:1 на <code>#1b1420</code> <small>(посчитано)</small></td><td><code>line #5C6A7E</code>, 3.2:1 на surface <small>(DEC-0086)</small></td><td><span class="chip part">VR строже бренда</span></td></tr>
+<tr><td>Цвета состояний</td><td>running → info (синий), blocked (нужен человек) → negative, idle → warning, ended → muted; цвет только на рамке и точке <small>(fabric: tokens.app.css:84-95)</small></td><td>только <code>warn</code>, <code>danger</code> и <code>recording = danger</code>; словаря run-состояний нет — пока не было run'ов</td><td><span class="chip part">частично</span></td></tr>
+<tr><td>Шрифт</td><td>Inter; данные в <code>ui-monospace</code></td><td>системный, <code>FontFamily</code> не задан <small>(Theme.kt:23-28)</small></td><td><span class="chip no">нет</span></td></tr>
+<tr><td>Радиусы</td><td>8 / 16 / 24 / pill</td><td>8 / 14 / 22 <small>(Tokens.kt:123-127)</small></td><td><span class="chip part">почти</span></td></tr>
+<tr><td>Отступы</td><td>4 / 8 / 12 / 16 / 24 / 32</td><td>4 / 8 / 16 / 24 / 32, без 12 <small>(Tokens.kt:74-78)</small></td><td><span class="chip part">почти</span></td></tr>
+<tr><td>Размер текста</td><td>desktop: body 14 px, meta 12 px</td><td>body 17 sp, label 14 sp, title 28 sp</td><td><span class="chip ok">осознанное отличие</span></td></tr>
+<tr><td>Движение</td><td>ease <code>cubic-bezier(.2,0,0,1)</code>, 120 / 180 мс, при reduced motion 0</td><td>120 / 240 мс</td><td><span class="chip part">почти</span></td></tr>
+<tr><td>Тема</td><td>тёмная по умолчанию, светлая по выбору</td><td>только тёмная, это зафиксированное решение</td><td><span class="chip ok">да</span></td></tr>
+<tr><td>Иконка</td><td>у каждого продукта семьи свой золотой глиф на тёмной плитке; маракуйя принадлежит только родительскому бренду и самому Fabric <small>(fabric: docs/brand/ui.md:7-9)</small></td><td>маракуйя на <code>#2D0039</code> <small>(res/mipmap-anydpi-v26/ic_launcher.xml:3)</small></td><td><span class="chip part">зависит от имени, §4</span></td></tr>
+<tr><td>Имя</td><td>«Fabric X» для отдельных продуктов (Switchboard, Inbox). Аудит бренда отговаривает дробить сам Fabric на подпродукты <small>(fabric: docs/audit/2026-09-07-brand-and-product.md:9-21)</small></td><td>«Fabric VR», «Fabric VR Space»</td><td><span class="chip part">решение, §10</span></td></tr>
+<tr><td>Голос и термины</td><td>«peer-builder»: конкретно, без AI-маркетинга; Project / Agent / Provider / Estate не переводятся; запрещены seamless, magic, AI-powered, ecosystem; «custom dashboard» заменяется на <b>Role workspace</b></td><td>164 строки английских черновиков, <code>docs/brand/</code> нет (<code>B-035</code>), русская локаль заблокирована им же (<code>B-152</code>)</td><td><span class="chip no">нет</span></td></tr>
+</table></div>
+
+<h3>Предлагаемая VR-адаптация токенов (не решение, а черновик DEC)</h3>
+<div class="tbl"><table>
+<tr><th>Роль</th><th>PassionCode</th><th>Quest</th><th>Почему</th></tr>
+<tr><td>фон панели</td><td><code>#0a070d</code></td><td><code>#130e17</code> (19,14,23)</td><td>пол 13/255 и тот же сливовый оттенок; текст <code>#fff9f0</code> на нём 18.2:1</td></tr>
+<tr><td>карточка</td><td><code>#1b1420</code></td><td><code>#1b1420</code></td><td>уже выше пола; от фона отличается на ≥5 уровней (<code>DEC-0085</code>)</td></tr>
+<tr><td>поднятая поверхность</td><td>—</td><td><code>#241b2a</code></td><td>для активного пункта rail и полей ввода</td></tr>
+<tr><td>контур контрола</td><td><code>#5c4e63</code> (2.33:1)</td><td><code>#6e5f76</code> (3.05:1)</td><td>правило 3:1 (<code>DEC-0086</code>)</td></tr>
+<tr><td>разделители</td><td><code>#342b3a</code></td><td><code>#342b3a</code></td><td>это волосяная линия, а не граница контрола; порог 3:1 к ней не применяется</td></tr>
+<tr><td>акцент, состояния, текст</td><td colspan="2">без изменений: gold 12.4:1, muted 8.1:1, info 9.9:1, negative 8.7:1 на карточке</td><td>посчитано по WCAG relative luminance</td></tr>
+</table></div>
+<p class="meta">Контраст посчитан формулой WCAG 2.x по hex-значениям. Это соответствие цифр, а не проверка в шлеме: как палитра выглядит на дисплее Quest над passthrough, никто пока не видел (<code>B-028</code>).</p>
+
+<h2 id="define">4 · Что это такое после перестройки</h2>
+<p><b>Пульт Fabric.</b> Fabric — это CEO-агент, который ведёт Project'ы и Agent'ов на вашем Mac (<code>fabric: docs/brand/facts.md:13-14</code>). Пульт — это его поверхность там, где вас нет за Mac'ом: в шлеме рядом с виртуальным экраном и в телефоне. Пульт не заменяет desktop-Fabric и не открывает терминалы Agent'ов. Он читает проекции и отправляет типизированные команды с квитанцией.</p>
+<div class="grid g3">
+  <div class="card"><h4>1 · Внимание</h4><p>Всё, что ждёт человека: вопросы Agent'ов (<code>decision · access · priority · fact · approval</code>), предложения и выдачу доступа. Ответ даётся в одно нажатие, если варианты даны, или голосом.</p></div>
+  <div class="card"><h4>2 · Project'ы</h4><p>Карточка на каждый Project: здоровье, Agent'ы, сколько ждёт внимания, активные run'ы, последний и следующий run. Схема уже есть: <code>fabric: schemas/project-dashboard.schema.json</code>.</p></div>
+  <div class="card"><h4>3 · Agent'ы и run'ы</h4><p>Кто работает сейчас: фаза heartbeat (<code>reading · working · waiting · verifying · blocked</code>), хвост транскрипта, «что говорит Agent» рядом с «что видел Fabric». Остановка — это команда с квитанцией.</p></div>
+  <div class="card"><h4>4 · Захват</h4><p>То, что уже есть: заметка, голосовая заметка, whisper на шлеме. Новое: назначение «куда» (заметка, память Project'а, черновик задачи, команда CEO) и офлайн-очередь до связи.</p></div>
+  <div class="card"><h4>5 · Role workspace</h4><p>Дашборды. По терминологии бренда «custom dashboard» называется <b>Role workspace</b> (<code>fabric: docs/brand/terminology.md:11</code>). В шлеме это отдельные панели вокруг вас, в телефоне — вкладка. Fabric Dashboards (ADR-0083) — это другое: хост локальных сервисов агентов на Mac, только loopback. Пульт видит его сервисы лишь как проекции через relay (ADR-0088).</p></div>
+  <div class="card"><h4>6 · Буфер обмена</h4><p>Слой из <code>DEC-0064</code>: скопировал на телефоне, вставил в шлеме. Остаётся в плане (<code>B-031</code>). Когда relay появится, буфер пойдёт через него.</p></div>
+</div>
+<h3>Чем пульт не является</h3>
+<ul>
+<li>Это не второй Fabric. Решения и журнал живут на Mac, пульт их не дублирует.</li>
+<li>Это не удалённый терминал. Писать в сессию Agent'а напрямую нельзя: только сообщение через Fabric, который его журналирует.</li>
+<li>Это не чат как хранилище. Ответ на вопрос становится записью в Fabric, а не репликой в переписке (<code>AI_PRODUCT_PATTERNS §7</code>).</li>
+<li>Это не рендер рабочего стола. Отказ повторён трижды (<code>DEC-0064</code>) и остаётся в силе.</li>
+</ul>
+
+<h3>Имя и иконка — два варианта</h3>
+<div class="tile-icons">
+  <figure>
+    <svg viewBox="0 0 256 256" role="img" aria-label="Вариант А: маракуйя Fabric на тёмной плитке"><rect x="8" y="8" width="240" height="240" rx="58" fill="#0a070d"/><rect x="9" y="9" width="238" height="238" rx="57" fill="none" stroke="#342b3a" stroke-width="2"/><use href="#pf" x="38" y="38" width="180" height="180"/></svg>
+    <figcaption><b>А · «Fabric» на Quest и телефоне (рекомендую).</b> Это поверхность одного продукта: иконка Fabric, имя в сторе «Fabric», а «Fabric VR» остаётся кодовым именем репозитория. Так советует аудит бренда: не дробить Fabric.</figcaption>
+  </figure>
+  <figure>
+    <svg viewBox="0 0 256 256" role="img" aria-label="Вариант Б: золотой глиф визора на тёмной плитке"><rect x="8" y="8" width="240" height="240" rx="58" fill="#0a070d"/><rect x="9" y="9" width="238" height="238" rx="57" fill="none" stroke="#342b3a" stroke-width="2"/><path d="M58 104c0-14 11-25 25-25h90c14 0 25 11 25 25v40c0 14-11 25-25 25h-24c-8 0-13-5-17-11l-4-6c-3-4-9-4-12 0l-4 6c-4 6-9 11-17 11H83c-14 0-25-11-25-25z" fill="none" stroke="#ffd21a" stroke-width="20" stroke-linejoin="round"/><circle cx="96" cy="124" r="12" fill="#ffd21a"/><circle cx="160" cy="124" r="12" fill="#ffd21a"/></svg>
+    <figcaption><b>Б · «Fabric VR» и «Fabric Mobile» как отдельные члены семьи.</b> Каждому нужен свой золотой глиф по шаблону плитки Switchboard и Inbox. Цена варианта — два новых имени в семье, против чего выступает аудит.</figcaption>
+  </figure>
+</div>
+
+<h2 id="features">5 · Фичи: что, где и от чего зависит</h2>
+<p>В колонке «Нужно от Fabric» — то, чего пульт не может сделать сам. Статус описывает сегодняшнее состояние кода, а не план.</p>
+<div class="tbl"><table>
+<tr><th>Фича</th><th>Quest</th><th>Телефон</th><th>Нужно от Fabric</th><th>Сегодня</th></tr>
+<tr><td colspan="5"><b>Захват</b></td></tr>
+<tr><td>Голосовая заметка одним нажатием, whisper на устройстве, облачный или свой сервер</td><td>да</td><td>да</td><td>—</td><td><span class="chip ok">есть</span> <small>SCN-004…007</small></td></tr>
+<tr><td>Markdown-хранилище, экспорт и импорт</td><td>да</td><td>да</td><td>—</td><td><span class="chip ok">есть</span> <small>REQ-054</small></td></tr>
+<tr><td>«Куда»: заметка / память Project'а / черновик задачи / сообщение CEO</td><td>да</td><td>да</td><td><code>fabric_memory_remember</code>, <code>fabric_task_create</code>, <code>ceo_send_message</code> через relay</td><td><span class="chip no">нет</span> <small>инструменты есть только в loopback MCP для Agent'ов</small></td></tr>
+<tr><td>Офлайн-очередь: захват работает без связи и уходит, когда связь есть</td><td>да</td><td>да</td><td>ключ идемпотентности на команду</td><td><span class="chip part">паттерн есть</span> <small>DictationOutbox, DEC-0068</small></td></tr>
+<tr><td colspan="5"><b>Внимание</b></td></tr>
+<tr><td>Очередь вопросов Agent'ов с вариантами, приоритетом и возрастом</td><td>да</td><td>да</td><td><code>project.read</code>, ресурс <code>…/attention</code></td><td><span class="chip no">нет</span> <small>таблица questions есть, удалённого доступа нет</small></td></tr>
+<tr><td>Ответ в одно нажатие или голосом, ответ как запись</td><td>да</td><td>да</td><td><code>fabric_interaction_respond</code>, scope <code>interaction.respond</code></td><td><span class="chip no">план</span> <small>ADR-0026</small></td></tr>
+<tr><td>Выдача доступа (grant) с явным сроком и границей</td><td>да</td><td>да, с биометрией</td><td>grant через interaction, аудит в журнале</td><td><span class="chip no">план</span></td></tr>
+<tr><td>Push, когда нужен человек</td><td>значок на панели</td><td>push и виджет</td><td>relay шлёт уведомление</td><td><span class="chip no">нет</span> <small>есть только уведомления macOS</small></td></tr>
+<tr><td colspan="5"><b>Project'ы</b></td></tr>
+<tr><td>Карточки Project'ов: health, agents, attentionCount, activeRunCount, lastRun, nextRun</td><td>да</td><td>да</td><td>проекция по <code>project-dashboard.schema.json</code></td><td><span class="chip part">схема есть</span></td></tr>
+<tr><td>Доска задач (backlog · running · review · done) — только чтение</td><td>да</td><td>да</td><td><code>fabric_tasks_list</code> через relay</td><td><span class="chip no">нет</span></td></tr>
+<tr><td colspan="5"><b>Agent'ы и run'ы</b></td></tr>
+<tr><td>Живой список run'ов с фазой heartbeat и состоянием словом</td><td>да, боковая колонка</td><td>да</td><td><code>run.read</code>, пробуждение через Realtime + опрос</td><td><span class="chip no">нет</span></td></tr>
+<tr><td>Claim / Tail: что говорит Agent и что видел Fabric, у каждого возраст</td><td>да, отдельная панель</td><td>да</td><td>транскрипт и наблюдения</td><td><span class="chip no">нет</span> <small>компонент есть в desktop-Fabric</small></td></tr>
+<tr><td>Остановить run: команда, а затем квитанция</td><td>да</td><td>да</td><td><code>fabric_run_cancel</code>; «сигнал — не квитанция» (<code>managedStop.ts:1-2</code>)</td><td><span class="chip no">план</span></td></tr>
+<tr><td>Запустить run или отдать задачу с превью эффекта</td><td>да</td><td>да</td><td><code>fabric_run_start</code>, scope <code>run.start</code></td><td><span class="chip no">план</span></td></tr>
+<tr><td>Голосовая команда CEO: «что застряло в fabric-inbox?»</td><td>да</td><td>да</td><td>CEO-чат, подключённый к воркеру</td><td><span class="chip no">нет</span> <small>хост есть, к Electron не подключён</small></td></tr>
+<tr><td colspan="5"><b>База знаний</b></td></tr>
+<tr><td>Поиск по памяти Project'а и транскриптам</td><td>да</td><td>да</td><td><code>fabric_memory_search</code>, <code>fabric_transcripts_search</code></td><td><span class="chip no">нет</span> <small>локальный поиск по заметкам есть</small></td></tr>
+<tr><td>Чтение wiki.passioncode.ai</td><td>панель</td><td>да</td><td>вход в workspace без Basic auth в клиенте</td><td><span class="chip no">нет</span></td></tr>
+<tr><td colspan="5"><b>Role workspace (дашборды)</b></td></tr>
+<tr><td>Панели-показатели вокруг вас в шлеме, вкладка в телефоне</td><td>до 3 панелей</td><td>вкладка</td><td>проекции Fabric; сервисы Fabric Dashboards — только через relay</td><td><span class="chip no">нет</span> <small>Dashboards — хост на Mac, ADR-0083</small></td></tr>
+<tr><td colspan="5"><b>Специфика устройств</b></td></tr>
+<tr><td>Панель рядом с Meta Virtual Display, Space с несколькими панелями</td><td>да</td><td>—</td><td>—</td><td><span class="chip part">Space есть, одна панель</span></td></tr>
+<tr><td>Общий буфер обмена Mac ↔ телефон ↔ Quest</td><td>да</td><td>да</td><td>канал через relay</td><td><span class="chip no">план</span> <small>B-031</small></td></tr>
+</table></div>
+
+<h2 id="mockups">6 · Макеты</h2>
+<div class="callout warn"><b>Это макеты, а не скриншоты.</b> Данные в них вымышлены, названия Project'ов взяты реальные. Панель Quest нарисована в масштабе 1 dp = 1 px (1024×640 dp, как в <code>ImmersiveActivity.kt</code>). Макет в браузере не доказывает, как это выглядит в шлеме. Тексты — черновик по <code>fabric: docs/brand/voice.md</code> и русской локали (на «вы», Project/Agent не переводятся). Проход через <code>copywriting</code> не делался.</div>
+
+<h3>6.1 · Сцена в шлеме</h3>
+<figure>
+  <div class="scroller"><div class="scene" role="img" aria-label="Схема сцены: в центре Mac Virtual Display, справа главная панель Fabric, слева панель Role workspace, внизу полоса захвата">
+    <div class="vd"><div class="bar"><i></i><i></i><i></i></div><div class="code">fabric-inbox — Claude Code
+$ npm test
+  ✓ reply policy · 42 passed
+  ▸ agent is waiting for a decision…
+
+// Meta Virtual Display: ваш Mac</div></div>
+    <div class="pn ws"><b>Role workspace · Основатель</b><div class="ln" style="width:70%"></div><div class="ln" style="width:50%"></div><div class="ln g"></div><div class="ln" style="width:80%"></div><div class="ln" style="width:60%"></div></div>
+    <div class="pn main"><b>Fabric · Внимание 3</b><div class="ln r" style="width:90%"></div><div class="ln" style="width:70%"></div><div class="ln r" style="width:85%"></div><div class="ln" style="width:60%"></div><div class="ln g"></div><div class="ln" style="width:75%"></div></div>
+    <div class="pn cap"><span class="d"></span><span>Записать · в fabric-vr</span></div>
+    <span class="lbl" style="left:250px;top:14px">Mac Virtual Display (Meta)</span>
+    <span class="lbl" style="right:24px;top:40px">Главная панель Fabric · 1,3 м</span>
+    <span class="lbl" style="left:24px;top:62px">Role workspace</span>
+    <span class="lbl" style="left:660px;top:405px">Полоса захвата</span>
+  </div></div>
+  <figcaption>Панель стоит рядом с виртуальным экраном Mac, а не поверх него. Главная панель справа, Role workspace слева, полоса захвата внизу в зоне кистей. Сейчас Space ставит одну панель в 1,3 м перед вами, на 0,15 м ниже глаз (<code>ImmersiveActivity.kt:427-440</code>). Добавятся вторая и третья панели, у каждой свой <code>Grabbable</code>. Схема не в масштабе.</figcaption>
+</figure>
+
+<h3>6.2 · Главная панель — «Внимание»</h3>
+<figure>
+<div class="scroller"><div class="m"><div class="vr" role="img" aria-label="Макет главной панели Fabric на Quest">
+  <div class="hdr">
+    <svg aria-hidden="true"><use href="#pf"/></svg><span class="name">Fabric</span><span class="muted" style="font-size:15px">Estate demo</span>
+    <span class="sp"></span>
+    <span class="conn"><span class="chip good">на связи</span>Mac ответил 12 с назад</span>
+    <button class="btn" aria-label="Поиск">⌕</button><button class="btn" aria-label="Настройки">⚙</button>
+  </div>
+  <div class="body">
+    <div class="rail">
+      <button class="on">Внимание <span class="count">3</span></button>
+      <button>Project'ы</button>
+      <button>Run'ы</button>
+      <button>Заметки</button>
+      <button>Workspaces</button>
+    </div>
+    <div class="main">
+      <div class="sect"><span>Ждёт вас · 3</span><span>показаны 2 · сначала важное</span></div>
+      <div class="q">
+        <div class="top"><span class="chip blk">решение</span><b style="color:var(--v-text)">fabric-inbox</b> · PM Agent<span class="sp"></span>4 мин</div>
+        <div class="text">Отвечать на письма example.com по reply policy?</div>
+        <div class="opts"><button class="btn">Да, по политике</button><button class="btn">Только черновики</button><button class="btn quiet">Детали</button></div>
+      </div>
+      <div class="q">
+        <div class="top"><span class="chip blk">доступ</span><b style="color:var(--v-text)">fabric-vr</b> · Codex<span class="sp"></span>11 мин</div>
+        <div class="text">Ключ <span class="mono">play-upload</span> на один run — выгрузка сборки</div>
+        <div class="opts"><button class="btn">Выдать на этот run</button><button class="btn">Отказать</button><button class="btn quiet">Детали</button></div>
+      </div>
+    </div>
+    <div class="side">
+      <div class="sect"><span>Сейчас</span><span>4 run'а</span></div>
+      <div class="run"><span class="who">PM Agent · fabric-inbox</span><span class="chip blk">ждёт</span><span class="what">ждёт решения · 4 мин</span></div>
+      <div class="run"><span class="who">Codex · fabric-vr</span><span class="chip blk">ждёт</span><span class="what">ждёт доступа · 11 мин</span></div>
+      <div class="run"><span class="who">Claude Code · fabric</span><span class="chip go">идёт</span><span class="what">verifying · 40 с назад</span></div>
+      <div class="run"><span class="who">Builder · switchboard</span><span class="chip idle">тихо</span><span class="what">нет heartbeat 9 мин</span></div>
+    </div>
+  </div>
+  <div class="cap">
+    <button class="btn primary rec"><span class="dot"></span>Записать</button>
+    <button class="btn route"><b>Куда: заметка → fabric-vr</b><span>сменить: память · задача · CEO</span></button>
+    <span class="hint">Нажмите ещё раз, чтобы остановить. Перед отправкой в Fabric текст можно будет прочитать и поправить.</span>
+  </div>
+</div></div></div>
+<figcaption>Первый фальсификатор проверяется по счётчику «3» в rail и двум красным словам «ждёт» справа. Каждое состояние названо словом («ждёт», «идёт», «тихо»), цвет стоит только на рамке и точке. Главная кнопка на экране одна — «Записать», потому что захват остаётся основным действием продукта. Варианты ответа — обычные кнопки высотой 72 dp. «Тихо» (idle, warning) отличается от «ждёт» (blocked, negative): в первом случае Agent'а никто не ждёт, во втором ждёт человек.</figcaption>
+</figure>
+
+<h3>6.3 · Run: что говорит Agent и что видел Fabric</h3>
+<figure>
+<div class="scroller"><div class="m"><div class="vr2" role="img" aria-label="Макет панели run'а с Claim и Tail">
+  <div class="hdr"><button class="btn" aria-label="Назад">←</button><span class="t">Claude Code · fabric</span><span class="chip go">идёт</span><span class="sp"></span><span class="muted" style="font-size:14px">TaskRun active · начат 18 мин назад · задача M162</span></div>
+  <div class="cols">
+    <div class="claim stale">
+      <h5><span>Agent сообщает</span><span>6 мин назад</span></h5>
+      <div style="font-size:18px">«Все тесты зелёные, осталось обновить README».</div>
+      <div class="muted" style="font-size:14px">Сообщению 6 минут. Новее — наблюдения Fabric справа.</div>
+      <div class="tail">phase: <b>verifying</b>
+waiting_kind: —
+last heartbeat: 40 s ago</div>
+    </div>
+    <div class="claim">
+      <h5><span>Fabric наблюдал</span><span>40 с назад</span></h5>
+      <div class="tail"><b>12:04:10</b>  npm test → exit 0  (312 passed)
+<b>12:06:52</b>  edit docs/launch/README.md
+<b>12:09:31</b>  npm run check:docs → exit 1
+            §4 dangling link: telegram-surface.md#relay
+<b>12:10:02</b>  heartbeat verifying</div>
+    </div>
+  </div>
+  <div class="act">
+    <button class="btn danger">Остановить run</button>
+    <button class="btn">Сказать Agent'у…</button>
+    <span class="note">Остановка — это команда. Слово «остановлен» появится, когда Fabric подтвердит её квитанцией, а не в момент нажатия.</span>
+  </div>
+</div></div></div>
+<figcaption>Паттерн Claim/Tail перенесён из desktop-Fabric (<code>fabric: components.css:229-246</code>). Утверждение без возраста не показывается, устаревшее выделено цветом idle. Здесь и видно, зачем это нужно: Agent говорит «зелёные», а Fabric видел <code>exit 1</code> позже. Кнопка «Сказать Agent'у…» открывает захват с назначением «сообщение в run».</figcaption>
+</figure>
+
+<h3>6.4 · Role workspace — дашборд как панель</h3>
+<figure>
+<div class="scroller"><div class="m"><div class="vr3" role="img" aria-label="Макет панели Role workspace">
+  <div class="hdr"><span class="t">Role workspace · Основатель</span><span class="sp" style="flex:1"></span><span class="muted" style="font-size:14px">обновлено 1 мин назад</span></div>
+  <div class="tiles">
+    <div class="tile"><span class="lbl">Ждёт вас</span><span class="val">3</span><span class="src">открыть: Внимание</span></div>
+    <div class="tile"><span class="lbl">Run'ы сейчас</span><span class="val">4</span><span class="src">2 ждут · 1 идёт · 1 тихо</span></div>
+    <div class="tile"><span class="lbl">Задачи на ревью</span><span class="val">7</span><span class="src">5 Project'ов</span></div>
+    <div class="tile"><span class="lbl">Проверено за неделю</span><span class="val">19</span><span class="src">done ≠ verified: 4 без проверки</span></div>
+    <div class="tile wide"><span class="lbl">Run'ы за 7 дней · завершено / с ошибкой</span>
+      <svg class="spark" viewBox="0 0 560 48" preserveAspectRatio="none" aria-hidden="true"><polyline fill="none" stroke="#a6bfff" stroke-width="2.5" points="0,30 80,22 160,26 240,14 320,18 400,10 480,16 560,8"/><polyline fill="none" stroke="#ff969f" stroke-width="2.5" stroke-dasharray="6 5" points="0,40 80,42 160,36 240,40 320,34 400,41 480,38 560,42"/></svg>
+      <span class="src">сплошная — завершено, пунктир — с ошибкой · источник: task_runs.outcome</span></div>
+  </div>
+</div></div></div>
+<figcaption>Каждая плитка открывает запись, из которой она посчитана (правило Stat из <code>fabric: docs/brand/components.md</code>). «done ≠ verified» — различие, которого требует аудит бренда. Пульт показывает Role workspace'ы из проекций Fabric без собственной логики подсчёта. Серии различаются и цветом, и типом линии, поэтому не зависят от цветового зрения.</figcaption>
+</figure>
+
+<h3>6.5 · Телефон</h3>
+<figure>
+<div class="phones m">
+  <div class="phone" role="img" aria-label="Макет телефона: экран Сейчас">
+    <div class="sb"><span>9:41</span><span>5G ▮▮▮</span></div>
+    <div class="ph"><svg aria-hidden="true"><use href="#pf"/></svg><span class="t">Сейчас</span><span class="icon">⌕</span></div>
+    <div class="scroll">
+      <div class="sect"><span>Ждёт вас · 3</span></div>
+      <div class="q">
+        <div class="top"><span class="chip blk">решение</span><b style="color:var(--v-text)">fabric-inbox</b><span class="sp" style="flex:1"></span>4 мин</div>
+        <div class="text">Отвечать на письма с example.com по текущей reply policy?</div>
+        <div class="opts"><button class="btn">Да</button><button class="btn">Черновики</button></div>
+      </div>
+      <div class="q">
+        <div class="top"><span class="chip blk">доступ</span><b style="color:var(--v-text)">fabric-vr</b><span class="sp" style="flex:1"></span>11 мин</div>
+        <div class="text">Ключ <span class="mono">play-upload</span> на один run</div>
+        <div class="opts"><button class="btn">Выдать</button><button class="btn">Отказать</button></div>
+      </div>
+      <div class="sect"><span>Run'ы</span><span>4</span></div>
+      <div class="run"><span class="who">Claude Code · fabric</span><span class="chip go">идёт</span><span class="what">verifying · 40 с</span></div>
+      <div class="run"><span class="who">Builder · switchboard</span><span class="chip idle">тихо</span><span class="what">нет heartbeat 9 мин</span></div>
+    </div>
+    <div class="fab"><span class="dot"></span>Записать</div>
+    <div class="tabs"><div class="on"><span class="g">◉</span>Сейчас</div><div><span class="g">▦</span>Project'ы</div><div><span class="g">✎</span>Заметки</div><div><span class="g">▤</span>Workspaces</div></div>
+  </div>
+
+  <div class="phone" role="img" aria-label="Макет телефона: выдача доступа с превью эффекта">
+    <div class="sb"><span>9:42</span><span>5G ▮▮▮</span></div>
+    <div class="ph"><span class="icon">←</span><span class="t">Доступ</span><span class="chip blk">ждёт</span></div>
+    <div class="scroll">
+      <div style="font-size:18px;font-weight:600">Codex просит ключ на один run</div>
+      <div class="box"><h6>Что произойдёт</h6><div class="eff"><b>Эффект:</b> grant
+<b>Кому:</b> Codex · fabric-vr · run r-7c1e
+<b>Что:</b> секрет play-upload, только чтение
+<b>Срок:</b> до конца этого run'а
+<b>Граница:</b> internal track, не production</div></div>
+      <div class="box"><h6>Почему просит</h6><div style="font-size:14px">«Собрал release 0.2.0, нужно выгрузить его в internal testing». <span class="muted">Сообщению Agent'а 11 мин</span></div></div>
+      <div class="box"><h6>Evidence</h6><div class="eff">assembleRelease → exit 0 · 12:31
+check-all.sh → exit 0 · 12:29</div></div>
+    </div>
+    <div class="bar"><button class="btn">Отказать</button><button class="btn primary">Выдать</button></div>
+  </div>
+
+  <div class="phone" role="img" aria-label="Макет телефона: голосовой захват с выбором назначения">
+    <div class="sb"><span>9:44</span><span>5G ▮▮▮</span></div>
+    <div class="ph"><span class="icon">✕</span><span class="t">Захват</span></div>
+    <div class="scroll">
+      <div class="timer"><span class="rd"></span><b>Запись 0:14</b><span class="muted">· whisper на устройстве</span></div>
+      <div class="field" style="min-height:150px">Надо проверить, почему в fabric-inbox PM Agent ждёт решения дольше часа, и завести задачу: уведомлять в телефон, если вопрос висит больше 30 минут<span class="caret"></span></div>
+      <div class="sect"><span>Куда</span></div>
+      <div class="seg"><div>Заметка</div><div class="on">Задача</div><div>CEO</div></div>
+      <div class="field">Project: <b>fabric-inbox</b> ▾</div>
+      <div class="muted" style="font-size:13px">Без связи захват сохранится на телефоне и уйдёт в Fabric, когда Mac будет доступен. Сейчас: на связи. «Отправить» станет доступна после остановки, когда текст можно прочитать.</div>
+    </div>
+    <div class="bar"><button class="btn" disabled style="opacity:.4" aria-disabled="true">Отправить</button><button class="btn primary">Остановить</button></div>
+  </div>
+</div>
+<figcaption>Слева экран «Сейчас»: те же «Внимание» и «Run'ы», что в шлеме, и та же кнопка захвата. В центре выдача доступа: эффект показан до запуска, с кем, чем, на какой срок и в каких границах (фальсификатор 4, <code>AI_PRODUCT_PATTERNS §5</code>). Справа захват во время записи по контракту Fabric R0: запись → стоп → просмотр → отдельная отправка, поэтому главная кнопка здесь «Остановить», а «Отправить» ещё неактивна (<code>fabric: docs/architecture/operator-interaction.md:58-76</code>). Мигающий курсор — единственный цикл, при reduced motion он неподвижен.</figcaption>
+</figure>
+
+<h2 id="arch">7 · Архитектура</h2>
+<figure class="arch">
+<svg viewBox="0 0 1080 430" role="img" aria-label="Схема: клиенты Quest, телефон и Telegram обращаются к relay; relay связан с Fabric на Mac исходящим туннелем; Fabric управляет Agent'ами">
+  <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor" class="mut"/></marker></defs>
+  <rect class="box" x="20" y="30" width="250" height="100" rx="14"/><text x="40" y="62" font-size="17" font-weight="700">Fabric · Quest</text><text x="40" y="86" font-size="13" class="mut">Compose · whisper.cpp · vault</text><text x="40" y="106" font-size="13" class="mut">офлайн-очередь команд</text>
+  <rect class="box" x="20" y="160" width="250" height="100" rx="14"/><text x="40" y="192" font-size="17" font-weight="700">Fabric · телефон</text><text x="40" y="216" font-size="13" class="mut">тот же core-fabric</text><text x="40" y="236" font-size="13" class="mut">push · виджет · share sheet</text>
+  <rect class="box plan" x="20" y="290" width="250" height="80" rx="14"/><text x="40" y="322" font-size="17" font-weight="700">Telegram-бот</text><text x="40" y="346" font-size="13" class="mut">план Fabric, ADR-0037</text>
+  <rect class="box new" x="380" y="120" width="300" height="170" rx="14"/><text x="400" y="152" font-size="17" font-weight="700">Relay · always-on</text><text x="400" y="178" font-size="13" class="mut">northbound MCP (ADR-0026)</text><text x="400" y="198" font-size="13" class="mut">OAuth: project.read · run.read ·</text><text x="400" y="216" font-size="13" class="mut">interaction.respond · run.cancel</text><text x="400" y="240" font-size="13" class="mut">кэш проекций · очередь команд</text><text x="400" y="260" font-size="13" class="mut">push · идемпотентность</text><text x="400" y="280" font-size="12" class="mut">предложение: Worker + Access, как у Inbox</text>
+  <rect class="box" x="790" y="90" width="270" height="170" rx="14"/><text x="810" y="122" font-size="17" font-weight="700">Fabric · Mac</text><text x="810" y="148" font-size="13" class="mut">журнал Estate · local Supabase</text><text x="810" y="168" font-size="13" class="mut">questions · task_runs ·</text><text x="810" y="186" font-size="13" class="mut">heartbeats · memory_facts</text><text x="810" y="210" font-size="13" class="mut">agent-surface MCP (loopback)</text><text x="810" y="236" font-size="12" class="mut">исходящий туннель к relay</text>
+  <rect class="box" x="790" y="300" width="270" height="80" rx="14"/><text x="810" y="332" font-size="17" font-weight="700">Agent'ы</text><text x="810" y="356" font-size="13" class="mut">Claude Code · Codex · Provider'ы</text>
+  <g style="color:var(--pc-text-muted)">
+    <path class="ar" d="M270 80 C330 80 330 170 380 175" marker-end="url(#ah)"/>
+    <path class="ar" d="M270 210 C320 210 330 205 380 205" marker-end="url(#ah)"/>
+    <path class="ar" d="M270 330 C330 330 330 250 380 250" marker-end="url(#ah)" stroke-dasharray="4 4"/>
+    <path class="ar" d="M790 175 L680 175" marker-end="url(#ah)"/>
+    <path class="ar" d="M680 230 L790 230" marker-end="url(#ah)"/>
+    <path class="ar" d="M925 260 L925 300" marker-end="url(#ah)"/>
+  </g>
+  <text x="690" y="166" font-size="12" class="mut">проекции</text><text x="690" y="252" font-size="12" class="mut">команды</text>
+  <text x="20" y="150" font-size="12" class="mut">клиенты → relay: опрос + пробуждение</text>
+  <text x="380" y="330" font-size="12" class="mut">пунктир — ещё не построено</text>
+  <text x="20" y="402" font-size="13" class="mut">Туннель исходит от Mac: входящих портов нет. Mac закрыт → relay честно показывает «Mac не на связи с 18:02»,</text>
+  <text x="20" y="420" font-size="13" class="mut">захват копится в офлайн-очереди, ответы на вопросы ждут. Ложного «отправлено» нет.</text>
+</svg>
+<figcaption>Relay и northbound MCP предложены самим Fabric: «there is no server… nothing runs when the operator closes the laptop» → «a small always-on relay» (<code>fabric: docs/architecture/telegram-surface.md:56-73</code>). Контракт, scopes, ключи идемпотентности и принцип «сначала опрос, SSE по возможности» описаны в <code>fabric: docs/architecture/mcp-control-surface.md:41-148</code>. Прецедент размещения — Fabric Inbox на Cloudflare Worker за Access (<code>fabric-inbox: wrangler.jsonc:14-17</code>). Пунктир на рамке relay означает, что его ещё нет.</figcaption>
+</figure>
+<h3>Правила, которые закрывает архитектура</h3>
+<ul>
+<li><b>Клиент не доверяет себе.</b> Остановка, ответ и выдача доступа становятся состоянием только после квитанции Fabric. До неё показывается «отправлено, ждёт подтверждения».</li>
+<li><b>Каждая команда несёт ключ идемпотентности.</b> Повтор из офлайн-очереди не выдаёт доступ дважды.</li>
+<li><b>Секреты в пульт не попадают.</b> Grant выдаётся Agent'у, а клиент видит только имя слота, никогда значение.</li>
+<li><b>Правило cleartext сохраняется</b> на каждом переходе (<code>DEC-0077</code>). Relay доступен только по HTTPS.</li>
+</ul>
+
+<h2 id="repo">8 · Как перестроить этот репозиторий</h2>
+<div class="tbl"><table>
+<tr><th>Модуль</th><th>Сейчас</th><th>После</th></tr>
+<tr><td><code>core-common</code></td><td>тема workbench (бирюза), контролы Fabric*</td><td>токены PassionCode v1.1.0 с VR-адаптацией и проверкой побайтового совпадения, как в <code>fabric: tokens.passioncode.manifest.json</code>; Inter в APK (OFL, запись в <code>NOTICE</code>); словарь состояний <code>running · blocked · idle · ended</code></td></tr>
+<tr><td><code>core-notes</code>, <code>feature-stt</code>, <code>feature-vault</code></td><td>заметки, голос, хранилище</td><td>без изменений; это модуль «Захват»</td></tr>
+<tr><td><code>core-fabric</code> <span class="chip plain">новый</span></td><td>—</td><td>клиент northbound MCP: OAuth, опрос и пробуждение, офлайн-очередь команд (по образцу <code>DictationOutbox</code>), квитанции. Без Android-зависимостей, чтобы перейти в KMP</td></tr>
+<tr><td><code>feature-attention</code> <span class="chip plain">новый</span></td><td>—</td><td>очередь вопросов, ответ, grant с превью эффекта</td></tr>
+<tr><td><code>feature-projects</code>, <code>feature-runs</code> <span class="chip plain">новые</span></td><td>—</td><td>карточки Project'ов, список run'ов, Claim/Tail, остановка с квитанцией</td></tr>
+<tr><td><code>feature-workspaces</code> <span class="chip plain">позже</span></td><td>—</td><td>Role workspace как панели или вкладка, из проекций Fabric; состояние сервисов Fabric Dashboards — через relay</td></tr>
+<tr><td><code>feature-assistant</code></td><td>OpenRouter-чат по заметкам, в APK не входит (<code>DEC-0020</code>)</td><td>удаляется: его роль берёт CEO Fabric. Отдельный чат со своим ключом был бы вторым мозгом рядом с Fabric</td></tr>
+<tr><td><code>app</code></td><td>Today · Editor · Search · Settings · Space</td><td>навигация «Внимание · Project'ы · Run'ы · Заметки · Workspaces»; Today становится «Заметками», запись переезжает в полосу захвата; Space с тремя панелями</td></tr>
+<tr><td>Телефон</td><td>—</td><td>Android: тот же код, другой host (<code>DEC-0065</code> для телефона не действует). iOS: либо Compose Multiplatform над <code>core-fabric</code>, либо отдельное приложение. Решение за вами, §10</td></tr>
+<tr><td>Документы</td><td><code>product-definition.md</code>, <code>DEC-0064</code>, сценарии про заметки</td><td>новое DEC вместо <code>DEC-0064</code>; <code>docs/brand/</code> как указатель на брендбук Fabric плюс VR-отличия (закрывает <code>B-035</code>); новые JTBD и сценарии через <code>/ux</code>: «ответить», «увидеть застрявшего», «захват в Project»</td></tr>
+</table></div>
+
+<h2 id="road">9 · Дорожная карта</h2>
+<ol class="steps">
+<li><b>Ф0 · Бренд, сейчас, без зависимостей.</b> Токены PassionCode с VR-адаптацией (DEC), Inter, иконка по решению §10, <code>docs/brand/</code>, русская локаль (<code>B-152</code>). Вместе с этим выполнить <code>B-223</code> — перестроить главный экран под 500 dp; это и так следующая задача по доске. Проверка: <code>PaletteFloorTest</code>, <code>ControlFloorTest</code>, <code>check-all.sh</code>.</li>
+<li><b>Ф1 · Relay и northbound MCP только на чтение — в репозитории <code>fabric</code>.</b> Scopes <code>project.read</code> и <code>run.read</code>, исходящий туннель от Mac. Это главный блокер. У Fabric он стоит на горизонте 4, и его приоритет надо поднять решением в самом Fabric.</li>
+<li><b>Ф2 · Пульт на чтение.</b> <code>core-fabric</code>, «Внимание» (пока только просмотр), Project'ы, Run'ы, Claim/Tail. Экраны на Quest и Android-телефоне.</li>
+<li><b>Ф3 · Действия.</b> <code>interaction.respond</code> (ответ, решение, grant с превью), <code>run.cancel</code> с квитанцией, push. Каждое действие с эффектом получает сценарий и тест «эффект виден до запуска».</li>
+<li><b>Ф4 · Захват в Fabric.</b> Назначения «память · задача · CEO» и офлайн-очередь с идемпотентностью. Голосовая команда CEO — когда CEO-чат будет подключён к воркеру.</li>
+<li><b>Ф5 · iOS</b>, если выбран.</li>
+<li><b>Ф6 · Role workspace</b> и состояние сервисов Fabric Dashboards через relay.</li>
+<li><b>Ф7 · Общий буфер обмена</b> (<code>B-031</code>) через тот же relay.</li>
+</ol>
+<div class="callout warn"><b>Параллельно, от человека:</b> сессия в шлеме (<code>B-028</code>) по-прежнему не проведена, и ни один экран не видели на реальном дисплее. VR-палитру из §3 нужно проверить там же. Порядок <code>DEC-0066</code> (шлем и Store последними) пульт не меняет.</div>
+
+<h2 id="decide">10 · Решения за вами</h2>
+<div class="tbl"><table>
+<tr><th>#</th><th>Вопрос</th><th>Рекомендация</th></tr>
+<tr><td>1</td><td>Переопределяем ли продукт как пульт Fabric вместо «VR Notes» (<code>DEC-0064</code>)?</td><td>Да. Заметки и голос не теряются, они становятся модулем «Захват».</td></tr>
+<tr><td>2</td><td>Имя: «Fabric» на Quest и телефоне (вариант А) или «Fabric VR» и «Fabric Mobile» (вариант Б)?</td><td>А. Так советует аудит бренда, иконка остаётся маракуйей, а «Fabric VR» становится кодовым именем.</td></tr>
+<tr><td>3</td><td><s>«Fabric Dashboards» по терминологии бренда должен называться «Role workspace»?</s></td><td><b>Закрыт ADR-0083 (2026-09-28):</b> Fabric Dashboards — отдельное desktop-приложение, хост локальных сервисов агентов, только loopback. Собственные дашборд-виды человека называются Role workspace. Это два разных понятия, и конфликта имён нет.</td></tr>
+<tr><td>4</td><td>Где живёт relay?</td><td>Cloudflare Worker + Access, как Fabric Inbox. Это уже рабочий прецедент в организации.</td></tr>
+<tr><td>5</td><td>Телефон: сначала Android (тот же код) или сразу iOS?</td><td>Android сразу, iOS после Ф3.</td></tr>
+<tr><td>6</td><td>Какие эффекты можно подтверждать из пульта, а какие только за Mac'ом?</td><td>Из пульта — ответ, решение, остановка, grant на один run. Выдача постоянного доступа и всё, что касается production, — только за Mac'ом.</td></tr>
+</table></div>
+
+<h2 id="src">11 · Источники</h2>
+<ul style="font-size:14px">
+<li>Токены: <code>fabric: apps/desktop/src/renderer/src/tokens.passioncode.css</code> (v1.1.0, sha256 в <code>tokens.passioncode.manifest.json</code>), <code>fabric: apps/desktop/src/renderer/src/tokens.app.css:23-101</code>, <code>fabric: apps/desktop/src/renderer/src/components.css</code>.</li>
+<li>Бренд: <code>fabric: docs/brand/{ui,components,voice,terminology,facts}.md</code>, <code>fabric: docs/audit/2026-09-07-brand-and-product.md</code>, знак <code>fabric: assets/brand/favicon/source/passioncode-passion-fruit.svg</code>, шаблон плитки <code>fabric-switchboard: brand/passioncode/switchboard-mark.svg</code>.</li>
+<li>Платформа: <code>fabric: CONTEXT.md</code>, <code>fabric: supabase/migrations/…questions.sql</code>, <code>…agent_heartbeat.sql</code>, <code>…task_runs.sql</code>, <code>fabric: apps/desktop/src/main/agentSurface.ts</code>, <code>fabric: docs/architecture/{mcp-control-surface,telegram-surface,federation,operator-interaction,project-workspaces}.md</code>, <code>fabric: schemas/project-dashboard.schema.json</code>.</li>
+<li>fabric-vr: <code>core-common/…/theme/{Tokens,Theme}.kt</code>, <code>…/ui/Controls.kt</code>, <code>app/src/main/AndroidManifest.xml:111-115</code>, <code>ImmersiveActivity.kt</code>, <code>docs/product/product-definition.md</code>, <code>docs/ux/{foundation,screens,scenarios}.md</code>, <code>docs/DECISIONS.md</code> (<code>DEC-0020, 0064, 0065, 0066, 0068, 0077, 0085, 0086</code>), <code>docs/evidence/backlog.md</code> (<code>B-028, B-031, B-035, B-152, B-223</code>).</li>
+<li><b>Исправлено 2026-09-29.</b> Здесь было написано, что «Fabric Dashboards» не найдено ни в одном репозитории. Это неверно: ADR-0083 от 2026-09-28 и репозиторий <code>fabric-dashboards</code> существуют, поиск этого отчёта их пропустил. «Fabric Mobile» и «Fabric Remote» не найдены (поиск без учёта регистра по локальным клонам репозиториев организации, 2026-09-28).</li>
+</ul>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Сделано с помощью скилов: <code>sheleg-design</code> — визуальный слой, токены PassionCode, адаптированные под пол Quest; <code>super-ux</code> — продуктовая рамка поверх сценариев и foundation.</p>
+    <p>Макеты — черновик предложения, а не скриншоты продукта.</p>
+  </div>
+</footer>
+</body>
+</html>

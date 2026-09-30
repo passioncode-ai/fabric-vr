@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every Horizon-specific line here is checked by `ManifestPlatformTest`, which quotes the Meta
+  page that requires it. Lint cannot know any of this: the audit of 2026-09-21 found four of
+  these missing while `:app:lintDebug` was green (`REQ-045`).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:horizonos="http://schemas.horizonos/sdk"
+    android:installLocation="auto">
+
+    <!-- `android:version="1"` is Meta's, not Android's: *Application Manifests for Release
+         Builds* pairs the feature with it, and the upload validator reads the manifest. -->
+    <uses-feature android:name="android.hardware.vr.headtracking" android:required="false" android:version="1" />
+
+    <!-- The Space always opens into passthrough (`ImmersiveActivity.onSceneReady`), so the app
+         says so. `required="false"` keeps the 2D panel installable on a headset without it. -->
+    <uses-feature android:name="com.oculus.feature.PASSTHROUGH" android:required="false" />
+
+    <!-- The note editor and Search need text input inside the Space. Meta's Spatial SDK template
+         declares both keyboard features optional; whether either is what makes the system
+         keyboard attach to a Compose panel is unmeasured (`B-050`, device). -->
+    <uses-feature android:name="com.oculus.feature.VIRTUAL_KEYBOARD" android:required="false" />
+    <uses-feature android:name="oculus.software.overlay_keyboard" android:required="false" />
+
+    <!--
+      Without this, Horizon OS treats the app as needing controllers and REFUSES to launch the
+      immersive activity when none are paired: the system shows
+      `common_system_dialog_app_launch_blocked_controller_required` and nothing of ours ever runs.
+      Measured on a Quest 3 on 2026-09-19 with no controllers on — the Space "not opening" was the
+      shell blocking it, not our code failing. Declaring hand tracking as supported-but-not-required
+      is what says the app is usable with hands alone.
+
+      And the declaration is USED, not merely a key to the launch (`DEC-0067`, refining
+      `DEC-0009`): without it the Spatial SDK runtime enumerates no hand devices, so hands work
+      inside the Space *because* of these two lines (Meta, *Enable Hand Tracking*).
+    -->
+    <uses-feature android:name="oculus.software.handtracking" android:required="false" />
+    <uses-permission android:name="com.oculus.permission.HAND_TRACKING" />
+    <!--
+      81 is the Horizon OS version Meta Virtual Display needs (`DEC-0065`). The floor is the
+      product's positioning, not the code's: `minSdk = 34` alone would make it v76, and a
+      headset on v69–v75 used to fail with `INSTALL_FAILED_OLDER_SDK` against a floor that
+      claimed 69 (`B-098`).
+    -->
+    <horizonos:uses-horizonos-sdk horizonos:minSdkVersion="81" horizonos:targetSdkVersion="81" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!--
+        Cleartext is enabled at the platform level and policed in code (DEC-0005): a whisper-server
+        on the person's own network has no certificate, while every other endpoint must be https.
+        RemoteWhisperClient.validateBaseUrl and OpenRouterClient enforce that split.
+
+        There IS a networkSecurityConfig now, and it permits cleartext — which is not a
+        loosening, because `usesCleartextTraffic="true"` already permitted it. VRC.Quest.Packaging.4
+        requires the manifest to "provide a valid network security configuration"; the page defines
+        neither *valid* nor any position on cleartext, so a file that states the platform's
+        behaviour explicitly is the least this app can ship and still be readable by the upload
+        validator (`REQ-045`). What did not change is C-17's reason: a `domain-config` cannot
+        express an IP RANGE, so denying cleartext at the platform level and allow-listing by
+        domain would refuse every RFC1918 whisper-server — the one case this permission exists
+        for. NetworkPolicy is still the only thing that decides; since T-010 it parses the host
+        rather than carving it out of the string, because the string surgery read a URL's
+        userinfo as its host (C-01). Whether Meta's validator accepts a permissive base-config is
+        UNVERIFIED until a build is uploaded to a test channel.
+    -->
+    <application
+        android:name=".FabricVrApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.FabricVR">
+
+        <meta-data android:name="com.oculus.supportedDevices" android:value="quest3|quest3s" />
+        <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
+        <meta-data android:name="com.oculus.handtracking.version" android:value="V2.0" />
+        <!-- The Space launches straight into passthrough, so the loading screen must not be the
+             default black. *Passthrough Loading Screen*: black "is the default if the meta-data
+             node is not present" and is "not recommended for MR apps" (VRC.Quest.Functional.14). -->
+        <meta-data android:name="com.oculus.ossplash.background" android:value="passthrough-contextual" />
+        <uses-native-library android:name="libossdk.oculus.so" android:required="false" />
+
+        <activity
+            android:name=".PanelActivity"
+            android:label="@string/app_name"
+            android:exported="true"
+            android:resizeableActivity="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|density|keyboard|keyboardHidden"
+            android:theme="@style/Theme.FabricVR">
+            <!-- T-030 / DEC-0043. The minimum is what the frame can actually serve, not a wish:
+                 48 padding + 64 header + 130 status slot + 128 record button + three 16 dp gaps
+                 is 418 dp of fixed chrome, so the original 360 dp promised the shell a size at
+                 which the notes could not be reached at all (B-11).
+
+                 REQ-060 raised it from 560 to 736 and this is what bought the 176 dp: the
+                 pinned notice slot below the record button — 160 dp bounded, plus its gap —
+                 which is what makes *Undo* reachable after deleting the thirtieth note. It has
+                 to be in the budget or B-11 returns the first time a banner and an undo line
+                 are up together at the minimum. The default height rises with it, because a
+                 default below the minimum is not a size the shell can honour.
+
+                 736 = 48 padding + 64 header + 130 status slot + 128 record button +
+                 160 notice slot + four 16 dp gaps + 128 for the shortest note row = 722,
+                 rounded up. `PanelMinimum` in TodayScreen.kt carries the same two numbers and
+                 `PanelSizeTest` recomputes the sum from the tokens. -->
+            <layout
+                android:defaultWidth="1024dp"
+                android:defaultHeight="800dp"
+                android:minWidth="480dp"
+                android:minHeight="736dp" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="com.oculus.intent.category.2D" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".ImmersiveActivity"
+            android:label="@string/app_name_space"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+            android:configChanges="screenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="com.oculus.intent.category.VR" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

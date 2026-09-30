@@ -1,0 +1,93 @@
+Fabric VR
+Copyright (c) 2026 Siarhei Sheleh
+
+Fabric VR's own code is open source under the GNU Affero General Public License
+v3.0 only (LICENSE), or available under a commercial licence from PassionCode.ai
+(COMMERCIAL-LICENSE.md, contact@passioncode.ai). SPDX:
+AGPL-3.0-only OR LicenseRef-PassionCode-Commercial. That licence covers this
+project's own code only; each component below keeps its own licence.
+
+This product includes third-party software. Every entry below was read from the
+artefact this build actually ships — the vendored source tree, or the POM in the
+Gradle module cache — rather than from a list somebody maintained by hand.
+
+Read `docs/runbooks/dependencies.md` before changing a version; the byte-level
+pins live in `gradle/verification-metadata.xml`, which is also this project's SBOM.
+
+================================================================================
+whisper.cpp, including ggml — MIT
+================================================================================
+Source: third_party/whisper.cpp, pinned at v1.9.4 (927cfce).
+Shipped: compiled into `libfabricvr_whisper.so` for arm64-v8a, inside the APK.
+Licence text: third_party/whisper.cpp/LICENSE — reproduced here in full, because
+the MIT licence requires its notice to travel with the binary and a submodule
+path is not a notice a person holding the APK can reach.
+
+  MIT License
+
+  Copyright (c) 2023-2026 The ggml authors
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+================================================================================
+Meta Spatial SDK 0.14.0 — Meta Platform Technologies SDK License Agreement
+================================================================================
+Artefacts: com.meta.spatial:meta-spatial-sdk, -toolkit, -vr, -compose (and the
+transitive -isdk), each declaring in its POM:
+
+  <license>
+    <name>Meta Platform Technologies SDK License Agreement</name>
+    <url>https://developer.oculus.com/licenses/oculussdk/</url>
+  </license>
+
+This is NOT an open-source licence. It governs distribution of anything built
+with it, including a build handed out outside the Meta Horizon Store, and it has
+not been read end to end by this project. Reading it is a prerequisite of the
+packaged out-of-Store build (`DEC-0066`), not of a debug sideload.
+
+================================================================================
+Apache License 2.0
+================================================================================
+The following are used as published, unmodified, and are covered by the Apache
+License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0). A copy of the
+licence travels with each artefact; none carries its own NOTICE file requiring
+further attribution.
+
+  androidx.core:core-ktx 1.13.1
+  androidx.activity:activity-compose 1.9.2
+  androidx.lifecycle:lifecycle-runtime-ktx, -viewmodel-compose, -runtime-compose 2.8.6
+  androidx.navigation:navigation-compose 2.8.3
+  androidx.compose:compose-bom 2024.09.03, and the Compose UI, Material3 and
+    material-icons-extended artefacts it versions
+  androidx.room:room-runtime, room-ktx, room-compiler 2.7.2
+  com.squareup.okhttp3:okhttp, okhttp-sse 4.12.0 (with Okio)
+  org.jetbrains.kotlin:kotlin-stdlib, kotlin-reflect 2.2.21
+  org.jetbrains.kotlinx:kotlinx-serialization-json 1.11.0
+  org.jetbrains.kotlinx:kotlinx-coroutines-android 1.9.0
+
+Test-only dependencies (JUnit 4 — EPL 1.0, Robolectric — MIT, MockWebServer —
+Apache 2.0, androidx.test) are not distributed in the APK and are listed here for
+completeness rather than as an obligation.
+
+================================================================================
+Speech models
+================================================================================
+The whisper models (`ggml-*.bin`) are NOT redistributed. The app downloads the
+one a person chooses from huggingface.co at first use, against a pinned SHA-256
+(`WhisperModel.kt`). Their terms are the model publisher's, not this project's.

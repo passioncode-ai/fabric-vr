@@ -1,0 +1,4 @@
+# gitleaks false positives in vendored upstream code (the whisper.cpp submodule): a CI cache key
+# name in its own workflow, not a credential. Fingerprints are <file>:<rule>:<line>.
+third_party/whisper.cpp/.github/workflows/build-cpu.yml:generic-api-key:46
+third_party/whisper.cpp/.github/workflows/build-cpu.yml:generic-api-key:74

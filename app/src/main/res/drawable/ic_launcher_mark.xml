@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The mark, inset out of the mask's cropping zone. An adaptive icon's foreground is 108dp but a
+  launcher may crop to the inner 72dp, so a full-bleed mark loses its rind on a round mask.
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@mipmap/ic_launcher_foreground"
+    android:inset="18%" />

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Required by VRC.Quest.Packaging.4 — "your application must provide a valid network security
+  configuration in your application manifest". The page says nothing more than that: it defines
+  neither *valid* nor any position on cleartext, and no Meta page found on 2026-09-21 rules on a
+  permissive base-config. So this file states, explicitly, the behaviour the platform already had
+  under `usesCleartextTraffic="true"`. It loosens nothing.
+
+  Why cleartext stays permitted (`DEC-0005`, and C-17's reasoning, unchanged): a whisper-server on
+  the person's own network has no certificate, and a `domain-config` cannot express an IP RANGE.
+  Allow-listing by domain would therefore refuse every RFC1918 address — the one case this
+  permission exists for. The decision about WHERE cleartext may go is made in code, by
+  `NetworkPolicy.requireReachable`: `https` anywhere, plain `http` only to loopback, RFC1918,
+  link-local and their IPv6 equivalents. That check is called at every remote entry point.
+
+  System trust anchors are named rather than inherited so the file says what it trusts. No user
+  anchors: this app never asks a person to install a certificate, and a config that quietly
+  trusted the user store would make a headset with a corporate MITM profile indistinguishable
+  from a clean one.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

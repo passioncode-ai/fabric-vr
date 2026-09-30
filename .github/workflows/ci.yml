@@ -1,0 +1,190 @@
+# The gates, on every push.
+#
+# This file exists because three defects in this project survived for an unknown period each, and
+# every one of them is caught by a command that already existed and that nobody ran:
+#   - check-secrets.sh greped nothing at all, and said "ok" while doing it (f7d656d)
+#   - PanelSmokeTest was red for three commits while the handoff claimed thirteen green (F-02/F-03)
+#   - :app:assembleRelease had never been attempted (C-13)
+#
+# WHAT THIS CANNOT CATCH, stated so nobody adds it later thinking it was forgotten: the
+# instrumented suite. Those tests need arm64, Horizon OS, the Meta Spatial SDK runtime and a 190 MB
+# model on the device. A hosted x86 emulator would run NONE of them — the APK is arm64-only
+# (app/build.gradle.kts, `abiFilters += "arm64-v8a"`) — and a green on a platform the app does not
+# ship to is worse than no signal at all. The substitute is the device-gate ledger check below,
+# which refuses a change to that suite that nobody recorded a run of.
+name: ci
+
+on:
+  push:
+  pull_request:
+  # 04:40 UTC daily, for the cold dependency job below. A supply-chain substitution that only
+  # shows on a cold cache would otherwise be found by whoever next clears theirs.
+  schedule:
+    - cron: '40 4 * * *'
+
+# A second push to the same branch cancels the first: the interesting answer is always about the
+# newest commit.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: gates and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive   # third_party/whisper.cpp; feature-stt's CMake guard needs it
+          fetch-depth: 0          # check-docs.sh resolves commit SHAs against history
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'      # matches the JBR this project is developed on
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # One script, so "green locally" and "green in CI" cannot mean different sets of checks.
+      # No NDK is installed in this job on purpose: measured 2026-09-20, testDebugUnitTest's task
+      # graph contains no externalNativeBuild, so this job never compiles whisper.cpp.
+      # One script, and now genuinely one: the device-gate check used to be a step here and
+      # nowhere else, so "green locally" and "green in CI" meant different sets.
+      - name: gates
+        run: bash scripts/check-all.sh
+        env:
+          BASE_REF: origin/${{ github.event.repository.default_branch }}
+
+      # Printed into the log on every push, and deliberately not a gate — see the header of
+      # `scripts/exposure.sh`. `--detail` here because a CI log is read after the fact, when the
+      # question is *which* row, not how many.
+      - name: how stale is what we believe we have verified
+        if: always()
+        run: bash scripts/exposure.sh --detail
+
+      # A verification failure must not be read as a generic build error. `check-all.sh` above
+      # already runs the JVM suite, so this step only fires when that one did not — it is here to
+      # name the runbook at the moment somebody is staring at a checksum they do not recognise.
+      - name: dependency verification, said in words
+        if: failure()
+        run: |
+          echo "::error::if the failure above names verification-metadata.xml or 'Dependency verification failed', read docs/runbooks/dependencies.md — it is NEVER fixed by deleting the file or passing --dependency-verification off"
+
+  # A republished artefact should be found by a nightly, not by the next person who clears their
+  # cache. `--refresh-dependencies` is the whole point: the warm cache in the job above would
+  # happily verify bytes it downloaded weeks ago.
+  dependencies:
+    name: dependency verification, cold
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # **`check-docs.sh` resolves commit SHAs against history**, and `VersionCodeTest`
+          # orders the commits it can reach — both need more than one.
+          #
+          # It used to be the release's own correctness that depended on this line: `versionCode`
+          # came from `rev-list --count HEAD`, which answers `1` in a `--depth 1` clone, and this
+          # job shipped that number for eleven commits. Since `B-160` the stamp is
+          # `show -s --format=%ct HEAD` — the commit object the clone is *for* — so it is right
+          # at any depth and the build no longer has to refuse a shallow one. The line stays for
+          # the gates; a job added without it now fails a documentation check rather than
+          # releasing an unorderable APK.
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
+
+      # Not the release build: this job is about what resolving pulls, and the JVM suite plus the
+      # androidTest compile resolve everything the metadata covers without paying for the NDK.
+      - name: resolve everything, cold, and verify it
+        run: ./gradlew --no-daemon --refresh-dependencies testDebugUnitTest :app:assembleDebugAndroidTest
+
+  release:
+    name: release build
+    # The expensive job: the NDK, whisper.cpp for arm64, R8. `main` only — the one branch since
+    # `DEC-0099` — so a scratch branch does not pay for a typo.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # **`check-docs.sh` resolves commit SHAs against history**, and `VersionCodeTest`
+          # orders the commits it can reach — both need more than one.
+          #
+          # It used to be the release's own correctness that depended on this line: `versionCode`
+          # came from `rev-list --count HEAD`, which answers `1` in a `--depth 1` clone, and this
+          # job shipped that number for eleven commits. Since `B-160` the stamp is
+          # `show -s --format=%ct HEAD` — the commit object the clone is *for* — so it is right
+          # at any depth and the build no longer has to refuse a shallow one. The line stays for
+          # the gates; a job added without it now fails a documentation check rather than
+          # releasing an unorderable APK.
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # NOT `android-actions/setup-android`. It replaces the runner's preinstalled command-line
+      # tools with a version of its own and then re-accepts every licence; on 2026-09-20 that step
+      # exited 1 on `sdkmanager --licenses` and took this job with it — five pushes in a row where
+      # `lint` and `assembleRelease` never ran at all while the cheap job was green, so the build
+      # looked checked and was not. The runner image already ships the SDK with its licences
+      # accepted; the only thing missing is the NDK this project pins.
+      - name: install the pinned NDK
+        run: |
+          set -eu
+          # `yes |` answers a licence prompt if the image has not accepted that one; the pipe makes
+          # sdkmanager's own exit code unreliable (SIGPIPE), so the directory test below — not the
+          # installer — is what this step actually asserts.
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" || true
+          test -d "$ANDROID_HOME/ndk/$NDK_VERSION"
+        env:
+          NDK_VERSION: '27.2.12479018'   # feature-stt/build.gradle.kts:9 — keep the two in step
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The .cxx tree is what makes a second run cheap; without it every run recompiles
+      # whisper.cpp for arm64 from scratch.
+      - name: cache the native build
+        uses: actions/cache@v4
+        with:
+          path: |
+            feature-stt/.cxx
+            feature-stt/build/intermediates/cxx
+          key: cxx-${{ runner.os }}-${{ hashFiles('.gitmodules', 'feature-stt/src/main/cpp/**', 'feature-stt/build.gradle.kts') }}
+
+      # Lint lives here, not in the cheap job: its task graph pulls externalNativeBuild, so running
+      # it anywhere else drags the NDK and a full arm64 compile into a gate meant to answer in
+      # seconds. Measured 2026-09-20.
+      - name: lint
+        run: ./gradlew --no-daemon :app:lintDebug
+
+      - name: assemble release
+        # **No `-PversionCode`.** `app/build.gradle.kts` stamps the version from git now, and
+        # `github.run_number` is a second monotonic sequence over the same field: a release built
+        # at run 50 and a local build at commit 120 cannot be ordered, and Android refuses a
+        # downgrade install. One sequence, and it is the one reproducible from a commit (`T-038`).
+        run: ./gradlew --no-daemon :app:assembleRelease
+
+      # THIS APK IS UNSIGNED: keystore.properties is untracked and absent on a runner, so the build
+      # takes its unsigned branch and logs that it did. It proves R8, the NDK and the manifest
+      # merge — not signing, and not that any headset will install it. Signing is T-039, the
+      # install procedure is T-037, publishing is T-041.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-release-unsigned-${{ github.run_number }}
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

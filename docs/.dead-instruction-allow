@@ -1,0 +1,11 @@
+# Pairs of "<spec id>:<deleted file's basename>" that section 15 of scripts/check-docs.sh may skip.
+#
+# The check refuses an OPEN spec that names a file deleted from the tree, because a spec is an
+# instruction somebody is about to follow. A documentation-cleanup task is the exception: naming
+# the dead file IS its work. Every line needs a reason, and a reason that stops being true is a
+# line that must go.
+#
+# Format: <T-0NN>:<File.kt>  # why
+T-042:VoiceCaptureSheet.kt   # T-042 rewrites the scenarios; SCN-004's stale clause is its subject
+T-043:HoldToTalkButton.kt    # T-043 rewrites the handoff, which cites the deletion as history
+T-045:VoiceCaptureSheet.kt   # T-045 removes the stale module-doc references; the name is the target

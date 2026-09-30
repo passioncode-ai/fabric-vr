@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Nothing leaves the headset except by Settings → *Export the vault* (`DEC-0026`). This is the
+    policy `allowBackup="false"` already stated, written the way Android 12+ reads it (`B-104`):
+    lint flags `allowBackup` as deprecated for `dataExtractionRules` on API 31+, and an app that
+    declares neither leaves the platform to decide. Every domain is excluded from both paths, and
+    `ManifestPlatformTest` refuses a file that stops excluding one. The Keystore-wrapped settings
+    could not be restored on another device anyway — the key never leaves this one.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

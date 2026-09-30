@@ -1,0 +1,494 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every word the person reads, in one file. Kotlin holds none of them: a copy pass, the brand voice
+  or a translation changes this file and nothing else, and a string that appears on two screens
+  cannot drift into two spellings.
+
+  That rule is about LOCATION and it held. `DEC-0045` adds the one about TRUTH, because the rule
+  above did not stop the first sentence the product said from being wrong twice: `today_empty`
+  promised a hold gesture `DEC-0010` had deleted and a note control that did not exist. It was
+  never *unreferenced* — it was rendered, on the first screen, every launch — so no mechanical
+  check could have caught it.
+
+    A STRING THAT MAKES A CLAIM ABOUT BEHAVIOUR CARRIES A COMMENT NAMING THE CODE THAT MAKES IT
+    TRUE, in the form "true because: <file> <symbol> — <what makes it true>". The example is the
+    comment above `action_record`; a comment cannot nest inside this one, which is why this says
+    where to look rather than showing the markers.
+
+  Only behaviour-claiming strings. A label like `action_copy` names no behaviour and carries
+  nothing; annotating everything is how annotations stop being read. **Changing a file named in
+  one of these comments means re-reading the strings that point at it** — that is the whole
+  review rule, and it is cheap because the annotated set is small.
+
+  Two mechanical halves hold the rest up. Android lint's `UnusedResources` is an ERROR
+  (`app/build.gradle.kts`), so a declared string with no caller fails the build — there is no
+  suppression list, and a per-string `tools:ignore` must name the board row that owns it.
+  `scripts/check-strings.sh` fails a key declared in two modules, which lint cannot see when both
+  copies are referenced.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- The name in the Horizon OS app library and in the task switcher. A sideloaded app lands
+         under "Unknown sources" there, not in the main grid, so the name is what makes it findable
+         at all: it is short, it is the first thing typed into the search field, and it is the same
+         word as the repository and the package. -->
+    <string name="app_name">Fabric VR</string>
+
+    <!-- The immersive activity, so a task switcher showing both does not show one name twice. -->
+    <string name="app_name_space">Fabric VR Space</string>
+
+    <!-- Actions -->
+    <string name="action_back">Back</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_save">Save</string>
+    <string name="action_delete">Delete</string>
+    <!-- `action_try_again` was here, unreferenced, as "the evidence of `B-33`" — the state
+         `VoiceState.NothingHeard` offers no action. REQ-061 deletes it: the board row IS the
+         evidence, a string is not, and a resource kept alive by a `tools:ignore` is a
+         suppression list with one entry. `B-150` closes as "the string is gone"; `B-33`, the
+         missing control, stays open and unchanged. -->
+    <!-- true because: TodayScreen.kt RecordStatus, the NeedsPermission branch — it opens the
+         editor through TodayActions.onNewNote. One key, not two: T-031 briefly added a second
+         under a different name, and two spellings of one sentence is exactly what this file's
+         header exists to prevent. Wording follows core-common's `action_write_note`, which the
+         banner renders for the same intent. -->
+    <string name="action_write_instead">Write a note instead</string>
+    <string name="action_new_note">New note</string>
+    <string name="action_clear_query">Clear the query</string>
+    <string name="action_clear">Clear</string>
+    <!-- The size is an argument since T-031: hard-coded, "(190 MB)" was wrong for four of the
+         five models the person can choose between. -->
+    <string name="action_download_model">Download speech model (%1$d MB)</string>
+    <string name="action_remove_model">Remove speech model</string>
+    <string name="action_save_server">Save server</string>
+    <string name="action_retry_vault">Retry the vault</string>
+
+    <!-- Section and screen headings -->
+    <string name="label_today_note">Today\'s note</string>
+    <string name="label_speech">Speech</string>
+    <string name="label_vault">Vault</string>
+    <string name="label_recent">Recent</string>
+    <string name="label_title">Title</string>
+    <string name="label_untitled">(untitled)</string>
+
+    <!-- Fields -->
+    <!-- REQ-061 / M27. One server, ONE name. It was "whisper-server URL (optional)" here,
+         "My whisper server" on the chip, "Your saved whisper server" in the carry-over and
+         "speech server" in two error strings — four names for one machine. "(optional)" was
+         additionally false: once that provider is chosen this is the only address there is. -->
+    <string name="field_server_url">Whisper server address</string>
+    <string name="field_search">Search notes and transcripts</string>
+    <string name="field_body_hint">Write, or use #tags inline</string>
+
+    <!-- States the person reads while waiting or when there is nothing -->
+    <!-- true because: TodayScreen.kt RecordButton — the button is disabled while `Transcribing` or `PreparingEngine`, and RecordStatus counts the seconds beside it. -->
+    <string name="state_transcribing">Transcribing…</string>
+    <!-- true because: VoiceViewModel.stopAndTranscribe — under MIN_SAMPLES the recording is not sent to an engine at all. -->
+    <string name="state_nothing_heard">Nothing was heard.</string>
+    <!-- REQ-052 / H11. true because: Recorder.silenced is AudioRecordingConfiguration
+         .isClientSilenced() plus AudioManager.isMicrophoneMute(), checked per read loop, and
+         VoiceViewModel maps it to VoiceState.Silenced while the recorder is still running.
+         **It deliberately does not say "nothing heard":** Meta's *Horizon OS Audio* says the
+         stream "isn't closed and is provided empty audio data", so the recording IS running and
+         the headset is the one that stopped it hearing. Blaming the person for the system's
+         decision is the copy defect this string exists to avoid. -->
+    <string name="state_microphone_silenced">The headset has muted the microphone. The recording is still running and nothing is reaching it.</string>
+    <!-- true because: VoiceViewModel.onPermissionResult — reached only after a refusal since DEC-0044, which is why it explains rather than instructs. -->
+    <string name="state_needs_microphone">The microphone is needed to dictate.</string>
+    <!-- T-031. Shown only after a refusal now: before the system dialog the reason is obvious
+         from the button that was just pressed, and in a headset a rationale screen is one more
+         thing to aim at. -->
+    <string name="action_ask_again">Ask again</string>
+    <!-- Same words as core-common's `action_write_note`, and deliberately a second string: that
+         one is a banner action the mapper chooses, this one is a control this screen draws. A
+         shared id would tie a copy change on one to the other. -->
+    <!-- Four minutes of waiting must not end in an absence: `Done` used to become `Idle`, the
+         progress bar vanished, and nothing said the bytes had arrived or been verified. -->
+    <!-- true because: VoiceViewModel — emitted on DownloadProgress.Done, which fires only after the digest has been verified (DEC-0016). -->
+    <string name="state_model_ready">The speech model is ready. Press Record.</string>
+    <!-- DEC-0010 deleted the hold gesture; this sentence outlived it, and sat one screen
+         away from `today_empty` saying "Press Record" — one build, two gestures. -->
+    <!-- true because: PermissionRequester.openAppSettings returning false — the intent resolves to nothing on this device, so there is no page and reinstalling is the only route left (D-02). -->
+    <string name="state_app_settings_unavailable">This headset has no page where a refused permission can be turned back on. Reinstalling the app is the only way to be asked again.</string>
+    <!-- Two callers since B-090: the editor opened on a row that is no longer there, and a
+         *Transcribe again* whose note was deleted while the decode ran. Re-reading the row before
+         the write is what made the second one visible at all — the snapshot could not see it, and
+         wrote the deleted note back.
+         true because: NoteEditorScreen (note == null) and NotesViewModel.retranscribe, which
+         returns Failed rather than resurrecting a row `undoDelete` alone may restore. -->
+    <string name="state_note_gone">This note is gone.</string>
+    <string name="state_nothing_written">Nothing written yet.</string>
+    <!-- REQ-061: "Space" is this product's name for the immersive surface (`CONTEXT.md`), and
+         it was capitalised in `action_leave_space` and lower-case in these two. -->
+    <string name="state_space_starting">Starting the Space…</string>
+    <string name="state_space_failed">The Space could not start on this headset.</string>
+
+    <!-- Strings that carry a value. Kept as format resources so the value's place in the sentence
+         is the translator's to choose, not the code's. -->
+    <!-- The speech service key. It said "OpenRouter" until 2026-09-20: DEC-0020 cut the
+         assistant and the clear/unreadable behaviour moved onto the surviving credential without
+         the sentence it inherited being rewritten. -->
+    <string name="settings_key_unreadable">The saved speech service key could not be read on this headset — enter it again.</string>
+    <!-- The other kind of failure, and it is the one that used to destroy the key. A busy
+         Keystore or a device still finishing boot is temporary, the bytes are still there, and
+         telling the person to re-enter a key that is fine would be the wrong sentence. C-04. -->
+    <string name="settings_key_unreadable_now">The saved speech service key could not be read just now. It is still stored — try again in a moment.</string>
+    <string name="settings_model_present">%1$s is on this headset</string>
+    <string name="settings_model_absent">%1$s is not downloaded</string>
+    <!-- Another model is transferring. Downloads are per model since T-021, so without this a
+         539 MB download becomes invisible the moment the person looks at a different one. -->
+    <string name="settings_model_downloading_other">%1$s is still downloading (%2$d%%)</string>
+    <string name="settings_download_progress">%1$d / %2$d MB</string>
+
+    <!-- B-199: the model store can be listed and reclaimed, and until now no screen offered it.
+         `FileModelStore` puts all five models in one directory so switching between them keeps
+         what is already downloaded — the right call, and the reason 1.395 GB could accumulate
+         with nothing listing it: the only removal resolved the SELECTED store and deleted that
+         one file. Every string below names the whole shelf rather than one model. -->
+    <string name="label_model_storage">Speech models on this headset</string>
+    <!-- true because: SettingsUiState.installedBytes is InstalledModels.totalBytes(), which sums
+         every catalogued model's file AND its leftover .part. -->
+    <string name="settings_models_total">%1$s in %2$d models</string>
+    <string name="settings_models_none">No speech model is downloaded yet.</string>
+    <!-- true because: SettingsViewModel.freeUpSpace reads KEY_STT_MODEL and passes it as `keep`;
+         InstalledModels.removeOthers(keep) removes every other catalogue entry. -->
+    <string name="settings_models_hint">Models you have tried stay on the headset so switching back costs nothing. Free up space keeps the one you have selected.</string>
+    <!-- One row. The size is measured from the filesystem rather than taken from the catalogue,
+         because what a person deciding what to delete needs is what it occupies NOW. -->
+    <string name="settings_model_row">%1$s · %2$s</string>
+    <!-- An interrupted transfer keeps its partial on purpose, so Download costs only what is
+         missing (H8) — but those bytes are not a model, and a row that did not say so would
+         read as a model that is ready to use. -->
+    <string name="settings_model_row_partial">unfinished download</string>
+    <string name="settings_model_row_ready">ready</string>
+    <!-- Its own word, not `action_remove_model`: that one names the selected model and stands
+         under the chips; this one is per row and the row already says which model it is. -->
+    <string name="action_remove">Remove</string>
+    <string name="action_free_up_space">Free up space</string>
+    <!-- true because: InstalledModels.remove returns the bytes measured BEFORE the delete, so
+         the number is what was reclaimed rather than a guess. Zero is a legal answer and not a
+         failure — a person pressing Remove on something already gone wants the shelf empty. -->
+    <string name="state_model_removed">%1$s removed · %2$d MB freed</string>
+    <string name="state_space_freed">%1$d MB freed · %2$s kept</string>
+    <!-- T-031 / D-05: 190 MB with no ETA, in a headset, is an unbounded wait. Deliberately vague
+         — the app measures no bandwidth and an invented minute count would be a number it cannot
+         keep. "A few minutes" is the honest shape of what is known. -->
+    <string name="voice_download_estimate">A few minutes on Wi-Fi. Text notes work meanwhile.</string>
+    <!-- C-17: the sentence a person reads must say what http costs them. The platform flag is
+         app-wide because Network Security Config cannot express IP ranges (DEC-0005), so this
+         string and the code check are the whole of the disclosure. -->
+    <string name="settings_server_hint">https anywhere, or http only to a device on your own network — over http your voice is sent unencrypted, so anyone on that network can hear it.</string>
+    <string name="settings_carried_over_server">Your whisper server is in use again. Speech now goes there first — change it above if that is not what you want.</string>
+    <!-- true because: VaultMirror.kt — a Markdown file per note, and FileVault.adoptAudio, which
+         puts the WAV beside it. The old sentence named only the Markdown, which is true and
+         radically incomplete: the recordings are about 1.9 MB a minute and are ~99.9% of what is
+         actually in that folder (`DEC-0038`). -->
+    <string name="settings_vault_hint">Every note is mirrored there as Markdown, and every recording as a WAV beside it. Tap the path to copy it.</string>
+    <!-- EN drafts. The last clause of settings_export_done is the point of the whole row and
+         must survive the copy pass: `adb uninstall` deletes the vault, the database, the 190 MB
+         model and every Keystore value, and a release signature change forces one. -->
+    <string name="action_export_vault">Export the vault</string>
+    <!-- DEC-0023: the second headset is a test copy, and the obligation that follows is that
+         the person holding it can hand back a diagnosis without a laptop. -->
+    <string name="label_last_crash">The app closed unexpectedly</string>
+    <string name="settings_crash_hint">Copy this and send it — it says what failed and carries no note text.</string>
+    <string name="action_copy_crash">Copy the report</string>
+    <string name="action_dismiss_crash">Dismiss</string>
+    <string name="label_export_scope">What goes in</string>
+    <string name="label_export_notes_only">Notes only</string>
+    <string name="label_export_with_audio">Notes and recordings</string>
+    <string name="settings_export_running">Exporting\u2026</string>
+    <!-- true because: VaultExport — the archive is written before this is shown, and the path is the one it was written to. -->
+    <string name="settings_export_done">Exported to %1$s. Copy it off the headset before reinstalling.</string>
+    <string name="action_export_send">Send it somewhere</string>
+    <!-- REQ-054 / H4: the half of DEC-0026 that did not exist. true because:
+         SettingsScreen → ArchivePicker (ACTION_OPEN_DOCUMENT) → VaultZipImporter.import, which
+         unpacks into the vault and reconciles. -->
+    <string name="action_restore_vault">Restore from an archive</string>
+    <string name="settings_restore_running">Restoring…</string>
+    <!-- true because: ImportSummary.imported counts notes that reached the database and
+         .skipped counts entries the vault already held — the live copy is newer than any
+         archive's by construction, so it is kept. -->
+    <string name="settings_restore_done">Restored %1$d notes. %2$d were already on this headset and were left alone.</string>
+    <!-- Its own sentence, because a well-formed export produces none: a count above zero means
+         the archive came from somewhere else, or an entry tried to write outside the vault. -->
+    <string name="settings_restore_refused">%1$d entries were refused — they are not notes from an export of this app.</string>
+    <!-- true because: SettingsViewModel reads BuildConfig, which `app/build.gradle.kts` stamps
+         from git at configuration time. `H-31`: this line read "Fabric VR 0.1.0 (1)" on every
+         build this project has ever produced, because the version came from a `-PversionCode`
+         flag nobody passed. It is read out over a call, so every field is positional and a
+         translation may reorder them. -->
+    <string name="settings_version">Fabric VR %1$s (%2$d) · %3$s · %4$s</string>
+    <!-- true because: NotesViewModel.watchMirror — the first failure of an episode from
+         VaultMirror.failures, once, with Settings as the action because that is where the count
+         is. D-24: this lived in Settings alone, so a person whose notes had stopped reaching
+         their files had no reason to ever find out. -->
+    <string name="error_vault_not_mirrored">Some notes aren\'t reaching your files. They are saved in the app.</string>
+    <plurals name="settings_vault_out_of_sync">
+        <item quantity="one">%1$d note is not mirrored yet.</item>
+        <item quantity="other">%1$d notes are not mirrored yet.</item>
+    </plurals>
+    <string name="tag_hash">#%1$s</string>
+    <!-- T-029. The chip that releases the filter. "All" rather than "Clear": the row is a
+         selection, and one of the options is everything. -->
+    <string name="label_all_tags">All</string>
+    <!-- A filter that matches nothing must say WHICH filter, or an emptied tag looks like a
+         broken list. Falling back to All silently would make a delete look like a bug. -->
+    <string name="today_no_tagged_notes">Nothing tagged #%1$s.</string>
+
+    <string name="editor_saved">saved</string>
+    <string name="editor_saving">saving…</string>
+    <!-- REQ-061 / B-151. It was "voice · %1$s · %2$s · %3$s" filled with the language, the
+         ENGINE IDENTIFIER (`cloud:whisper-large-v3`, `whisper-server`) and
+         `transcript.source.name.lowercase()` — so a person read the literal `local_fallback`.
+         Two fields, both sentences: the engine id is a diagnostic and stays in the transcript
+         and in `Log2`, where `DEC-0023`'s report can carry it off the headset.
+         true because: NoteEditorScreen.kt renders it with `transcriptSourceRes(source)`. -->
+    <string name="editor_transcript_meta">Dictated · %1$s · %2$s</string>
+    <!-- B-151, the half REQ-061 left open. `Note.kt` calls `Transcript.fallbackReason` "the
+         receipt's most important field" and it was drawn nowhere: the badge said "transcribed on
+         this headset instead" and withheld the only part a person can act on — that the speech
+         service they configured did not answer, and what it said. The reason is an AppError, so
+         the sentence inside this one comes from `UiStateMapper`, which is the single place an
+         AppError becomes words.
+         true because: NoteEditorScreen.kt renders it from `fallbackNotice(transcript)`, which
+         returns null unless the transcript is a fallback that kept its reason. -->
+    <string name="editor_transcript_fallback">Why: %1$s</string>
+    <string name="search_no_match">Nothing matches «%1$s».</string>
+    <string name="today_empty">Nothing here yet. Press Record and speak.</string>
+    <!-- T-031 / D-05: the first run's only piece of onboarding, and it is three facts in the
+         order a person needs them — what to press, what it will cost, and that there is a way
+         round it. The last clause is honest only because T-028 put *New note* back. Chosen by
+         whether the model is present, never by a "has run before" flag.
+         The size is an ARGUMENT: it was hard-coded at 190 MB, the default, and wrong for four of
+         the five models a person can choose — the same defect this file's own gate exists to
+         stop, one string away from `action_download_model`, which T-031 had just fixed. -->
+    <string name="today_empty_first_run">Nothing here yet. Press Record and speak — the first dictation downloads a %1$d MB speech model, and after that everything happens on this headset. You can also write a note without it.</string>
+    <!-- REQ-061 / M27. **The line above is false under CLOUD and SERVER, in both of its
+         clauses**: the first dictation does not download a model there, it uploads a recording,
+         and nothing "happens on this headset" — the line one row up, `state_recording_leaves`,
+         says so, so the screen contradicted itself. Chosen by the provider now, and deliberately
+         silent about the destination, because that neighbouring line already names it and a
+         screen that says it twice trains people to read neither.
+         true because: TodayScreen.kt TodayFrame — the empty-state branch picks this whenever
+         `provider != SttProvider.LOCAL`. -->
+    <string name="today_empty_first_run_remote">Nothing here yet. Press Record and speak. You can also write a note without speaking.</string>
+    <string name="voice_seconds">%1$ds</string>
+    <!-- The last minute of a recording. A dictation has a maximum (DEC-0032) and a limit the
+         person only meets by hitting it is a trap, not a limit. -->
+    <!-- true because: VoiceViewModel.MAX_SAMPLES — the recording stops at ten minutes and TRANSCRIBES what it has (DEC-0032), so this is a warning and not a threat. -->
+    <string name="voice_time_left">%1$d s left</string>
+
+    <!-- REQ-061 closes the half of `B-151` that was about these three: they are what the
+         editor badge renders now (`transcriptSourceRes`), instead of the enum member's own
+         name, so the two `tools:ignore` exemptions are gone rather than re-justified.
+         `stt_source_remote` no longer says "speech server": `SttSource.REMOTE` covers a cloud
+         endpoint as well as the whisper server, and naming one of them was half of `M27`'s
+         four-names finding.
+         **`Transcript.fallbackReason` is still rendered nowhere**, which is the other half of
+         `B-21` and is NOT closed here — that is a surface, not a string.
+         They are phrased to follow both callers: the editor's `editor_transcript_meta`, and
+         Today, which appends the fallback one after the saved confirmation. -->
+    <string name="stt_source_local">transcribed on this headset</string>
+    <string name="stt_source_remote">transcribed by a speech service</string>
+    <string name="stt_source_local_fallback">transcribed on this headset instead</string>
+
+    <string name="state_no_recording">This note has no recording to transcribe again.</string>
+    <string name="state_retranscribed">Transcribed again.</string>
+    <string name="state_retranscribed_kept">Transcribed again. Your edited text was kept — the new version is in the note\'s transcript.</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_copied">Copied</string>
+    <!-- true because: NotesViewModel.retranscribe — the kept recording is re-run; an edited body is preserved and only the transcript is replaced (DEC-0022). -->
+    <string name="action_redo_stt">Transcribe again</string>
+    <!-- T-050. DEC-0022 keeps a recording of everything the person says; until this there was no
+         way to hear one, which is the half of G-12 that disclosure does not fix. -->
+    <!-- true because: AudioPlayback.toggle — one player in the process, released with the composition (DEC-0039). -->
+    <string name="action_play_recording">Play</string>
+    <!-- B-254. true because: NoteEditorScreen draws this list only when Vault.recordingsOf(note) holds
+         more than one file — the current recording and the earlier ones DEC-0090 keeps beside it. -->
+    <string name="editor_recordings_title">Recordings (%1$d)</string>
+    <string name="action_stop_recording">Stop</string>
+    <!-- T-024: the recording goes, the note stays. The two were one operation. -->
+    <string name="action_delete_recording">Delete recording</string>
+    <string name="label_recordings">Recordings</string>
+    <!-- The walk can be gigabytes, so the row says so rather than showing a zero that would read as "nothing is stored". -->
+    <string name="state_measuring_recordings">Measuring…</string>
+    <string name="settings_audio_usage">%1$d recordings · %2$s</string>
+    <!-- The sentence that did not exist. Every dictation keeps a .wav for ever and no string in
+         the product mentioned that audio was stored at all — Markdown is ~0.1% of it (G-02). -->
+    <string name="settings_audio_explain">Every dictation keeps its recording so it can be transcribed again. Recordings are the largest thing this app stores.</string>
+    <!-- REQ-061 / M27, and it is `DEC-0038`'s own sentence that this row was breaking:
+         "nothing fires on its own". "Delete recordings older than [30 days]" over a row of
+         chips reads as a standing policy, and nothing in this tree schedules a sweep — the
+         chips only decide what the button underneath will remove when it is pressed. -->
+    <string name="label_audio_retention">What the button below will delete</string>
+    <string name="label_retention_keep_all">Nothing</string>
+    <string name="label_retention_days">Recordings older than %1$d days</string>
+    <!-- true because: nothing in the tree schedules `Vault.sweepAudio`; the only caller is
+         `SettingsViewModel.deleteOldRecordings`, which runs on the press of the button below. -->
+    <string name="settings_retention_note">Nothing is deleted on its own. This only chooses what the button below removes when you press it.</string>
+    <!-- true because: SettingsViewModel.deleteOldRecordings computes its cutoff from
+         `audioRetentionDays` and hands it to `Vault.sweepAudio(cutoff)`, which removes what is
+         older than the cutoff and nothing else.
+         **It named the wrong set until REQ-061.** It was "Delete %1$d recordings (%2$s)" filled
+         from `audioUsage` — the TOTAL count and TOTAL bytes on the headset — so the button
+         promised to delete every recording and deleted only the old ones, against `DEC-0038`'s
+         "names what it is about to remove". A correct count is not available without walking
+         the tree, and `T-019`'s R1 forbids doing that to fill a caption, so the label names the
+         SET rather than a number it would have to invent. -->
+    <string name="action_delete_old_recordings">Delete recordings older than %1$d days</string>
+    <string name="state_recordings_deleted">%1$d recordings removed. The notes stay.</string>
+    <!-- true because: TodayScreen.kt RecordButton — the same control while `VoiceState.Recording`; stopping transcribes rather than discarding. -->
+    <string name="action_stop_record">Stop recording</string>
+
+    <!-- Speech models. The size is part of the name because it is the thing being chosen: on this
+         headset the difference between 32 MB and 574 MB is the difference between a wait and a
+         download. -->
+    <string name="model_tiny">Tiny · 32 MB · fastest, roughest</string>
+    <string name="model_base">Base · 60 MB</string>
+    <string name="model_small">Small · 190 MB · recommended</string>
+    <string name="model_medium">Medium · 539 MB · slow here</string>
+    <string name="model_large_turbo">Large v3 turbo · 574 MB · slowest here</string>
+
+    <!-- The same five models, named in one word. The rows above carry size and advice because a
+         person is choosing there; a status line is not a place to re-argue the choice. -->
+    <string name="model_short_tiny">Tiny</string>
+    <string name="model_short_base">Base</string>
+    <string name="model_short_small">Small</string>
+    <string name="model_short_medium">Medium</string>
+    <string name="model_short_large_turbo">Large v3 turbo</string>
+
+    <string name="provider_local">On this headset</string>
+    <string name="provider_cloud">Cloud service</string>
+    <string name="provider_server">Whisper server</string>
+    <string name="provider_local_note">Nothing leaves the headset.</string>
+    <string name="provider_cloud_note">Your recording is sent to the service you name below.</string>
+    <string name="provider_server_note">Your recording is sent to a machine on your own network.</string>
+
+    <!-- true because: TodayScreen.kt TodayFrame, the first item of the list, rendered whenever
+         VoiceViewModel.provider is not LOCAL — and nothing at all when it is. `G-02`: the three
+         provider notes above are all in Settings, beside the CHOICE, so a person who picked a
+         cloud service in July pressed Record in September with nothing on the screen that sends
+         their voice. An app that announces "nothing is leaving" every time trains people to stop
+         reading, which is why the local case says nothing. -->
+    <string name="state_recording_leaves">This recording is sent to %1$s.</string>
+    <!-- true because: SettingsScreen.kt, the Speech block — the switch writes
+         SecureSettings.KEY_COPY_TRANSCRIPT and Today reads it before the clipboard call.
+         `DEC-0012` keeps the copy ON by default; what was missing is the ability to say no. -->
+    <string name="label_copy_transcript">Copy the transcript to the clipboard</string>
+    <string name="settings_copy_transcript_note">On: a finished dictation is on the clipboard, ready to paste. Off: it is only a note.</string>
+    <!-- true because: TodayScreen.kt, the confirmation item — shown instead of
+         `state_saved_and_copied` when the copy is switched off. A confirmation that claims a copy
+         which did not happen is worse than none. -->
+    <string name="state_saved">Saved.</string>
+
+    <!-- REQ-062 / M22. Nothing in this app made a sound or moved a controller, and a person
+         dictating is usually looking at a streamed desktop rather than at this panel — so the
+         start, the stop, the ten-minute cap and the save all happened with no evidence they
+         had. The switch exists because Meta's *Haptics: Best practices* requires one ("Make
+         haptic feedback optional and adjustable"); on by default, because a cue nobody switches
+         on fixes nothing.
+         true because: FeedbackCues.kt PlatformFeedbackCues — the audio channel is a
+         `ToneGenerator` and exists on both surfaces; the haptic is attached only by
+         `ImmersiveActivity`, since `spatial.applyHapticFeedback` is the only haptics API Meta
+         documents and it belongs to the Space. -->
+    <string name="label_feedback_cues">Sound and vibration for dictation</string>
+    <string name="settings_feedback_cues_note">A short sound on record, stop, the ten-minute limit and a saved note — and, in the Space, a pulse in the controllers.</string>
+
+    <string name="label_speech_provider">Where speech is transcribed</string>
+    <string name="label_speech_model">Model on this headset</string>
+    <string name="label_speech_language">Language</string>
+    <string name="label_language_auto">Detect automatically</string>
+    <string name="field_cloud_url">Service address</string>
+    <string name="field_cloud_key">Service key</string>
+    <string name="field_cloud_model">Service model</string>
+    <string name="settings_cloud_hint">Any OpenAI-compatible endpoint: Groq, OpenAI, or your own. The address is the part before /v1. It must be https — over http your key and your voice would travel in the clear.</string>
+    <string name="settings_cloud_key_saved">Service key saved (…%1$s)</string>
+    <!-- true because: TodayScreen.kt — the dictation effect writes the clipboard and commits the note before this appears. -->
+    <string name="state_saved_and_copied">Saved, and copied. Paste it anywhere.</string>
+    <!-- true because: NotesViewModel.delete — the note is gone from the list and recoverable until the confirmation times out. -->
+    <string name="state_deleted">Deleted “%1$s”.</string>
+    <!-- true because: NotesViewModel.undoDelete — the row and its recording are both restored, and the vault keeps deleted files under `.trash` until then. -->
+    <string name="action_undo">Undo</string>
+    <string name="state_recording_not_restored">The note is back. Its recording had already been cleared, so it cannot be transcribed again.</string>
+    <string name="action_discard_recording">Discard the recording</string>
+    <!-- B-091 / SCN-004: "the engine fails -> the message names the failure, the audio is kept
+         and offered as a note without a transcript". T-005 stopped the file being deleted at the
+         moment of failure; nothing then owned it, so `VoiceViewModel.onCleared` deleted it on the
+         way out. This is the control that gives it an owner.
+         true because: VoiceViewModel.releaseRecordingForNote hands the path over and stops the
+         sweep claiming it; NotesViewModel.keepRecordingOnly writes the row. -->
+    <string name="action_keep_recording">Keep the recording as a note</string>
+    <!-- B-092 / G-05. The WAV write was `runCatching { … }.getOrNull()`, so a full disk produced
+         a note with no audio and not one word on screen — and the person finds out months later
+         that *Transcribe again* is missing from a row. The words are never the casualty: the
+         transcript still lands, and this says what did not.
+         true because: VoiceViewModel.stopAndTranscribe raises it on the write's failure only. -->
+    <string name="state_recording_not_kept">The recording couldn\'t be saved, so this note can\'t be transcribed again. Your words are safe.</string>
+    <!-- B-179. DEC-0060 chose CancellationException so a model switch could abandon a run with no
+         new error shape. That is not enough for a person who pressed something: silence after a
+         deliberate stop reads as a crash. *Told*, not silent — and the recording is the expensive
+         artefact, so what it says is that the recording survived.
+         true because: VoiceViewModel.stopTranscription cancels the decode and leaves `last.pcm`
+         and `last.audioPath` in place, which is what makes *Try again* and *Discard* real. -->
+    <string name="state_transcription_stopped">Stopped. Your recording is kept — try again, or discard it.</string>
+    <!-- B-251 (DEC-0092). The run was abandoned by the engine, not by the person: a model change
+         closes the engine a queued or running decode was using. true because: VoiceViewModel.transcribe
+         catches that CancellationException only while its own coroutine is still active, and leaves
+         `last.pcm` and `last.audioPath` in place — which is what makes *Try again* and *Discard* real. -->
+    <string name="state_transcription_model_changed">The speech model changed, so this transcription stopped. Your recording is kept — try again, or discard it.</string>
+    <!-- B-178. WhisperEngine.progressPercent() has returned 0..100 from whisper's own
+         progress_callback since DEC-0060 and nothing drew it. On the `small` model a ten-minute
+         dictation is roughly ten minutes of a state with no shape.
+         true because: Graph.transcriptionProgress reads the live context's atomic and
+         VoiceViewModel polls it while the state is Transcribing. -->
+    <string name="voice_transcribing_progress">Transcribing… %1$d%%</string>
+    <!-- B-179. Not the record button, which is disabled while a decode runs: a person cannot be
+         asked to press a dead target to escape a thirteen-minute wait.
+         true because: VoiceViewModel.stopTranscription cancels the job DEC-0060 made cancellable
+         all the way into the blocking native call. -->
+    <string name="action_stop_transcribing">Stop transcribing</string>
+    <!-- B-153 / B-02's sixth element. The row carries the engine and the language, which is more
+         informative and far less scannable than a glyph — a person looking for "the one I spoke"
+         reads twelve lines of `whisper-small-q5_1 · ru` instead of seeing two microphones.
+         true because: TodayScreen.NoteRow draws it only when `note.transcript != null`. -->
+    <string name="label_voice_note_icon">Dictated</string>
+    <!-- true because: TodayScreen.kt RecordButton — one press starts, the next stops. There is no hold gesture (DEC-0010) and no capture sheet. -->
+    <string name="action_record">Record</string>
+    <!-- true because: NoteEditorScreen.kt — the label after a refusal, where the press genuinely is "ask me again". Today never shows it: since DEC-0044 the first press produces the system dialog itself. -->
+    <string name="action_allow_microphone">Allow the microphone</string>
+    <string name="action_search">Search</string>
+    <!-- T-026 ships the state; T-030 renders these two. A clipped list has to say it is
+         clipped, or a search that finds fewer things than it counted looks like missing notes. -->
+    <!-- true because: NotesRepository.DEFAULT_WINDOW — the list asks for 200 and `NotesUiState.total` is the real count (DEC-0040). -->
+    <string name="today_more_notes">and %1$d more</string>
+    <!-- true because: NotesViewModel.showAll — raises the window to every note and never lowers it again. -->
+    <string name="action_show_all">Show all</string>
+    <string name="action_space">Space</string>
+    <string name="action_leave_space">Leave the Space</string>
+    <!-- Shown while the speech engine is being loaded or swapped. Before T-018 this wait was not
+         slow but frozen: freeing the old context blocked the main thread for the rest of whatever
+         transcription was running. It is a wait now, and a wait has to say what it is for. -->
+    <string name="state_preparing_engine">Getting the %1$s model ready…</string>
+    <string name="label_settings">Settings</string>
+    <string name="state_getting_model">Getting the speech model…</string>
+
+    <!-- `REQ-063` / `H13`. The row in Settings and the heading of the page it opens are one
+         string: they name the same thing and a second spelling of it is what this file exists to
+         prevent. -->
+    <string name="label_licences">Licences</string>
+    <!-- true because: LicencesScreen.kt readLicenceNotice — it returns the empty string when the
+         asset will not open, and the frame renders this instead. An empty licences page reads as
+         "this app uses nothing", which is the one claim it must never make. -->
+    <string name="state_licences_unavailable">The licence notice could not be read from this build. It is in the repository\'s NOTICE file.</string>
+
+    <!-- Further strings currently have no caller. They are NOT deleted here: `tag_hash` is
+         re-used by T-029, and removing it would re-open the defect. The full sweep is T-032's,
+         which has the inventory. `action_new_note`, `label_today_note` and
+         `state_nothing_written` came off this list with T-028 — the control that calls them
+         exists now.
+
+         **For T-032:** `today_empty` reads "Nothing here yet. Press Record and say something."
+         It is now INCOMPLETE rather than wrong — there is a second thing a person can do and it
+         does not say so. Half-correcting it here would be worse than leaving it, because a
+         half-corrected string looks like somebody checked. -->
+</resources>

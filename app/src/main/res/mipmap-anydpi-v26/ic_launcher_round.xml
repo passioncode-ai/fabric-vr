@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The PassionCode passion-fruit mark, copied from the fabric repository's assets/brand/brand-pack/png/
+  transparent/passioncode-icon-1024.png and downscaled per density with sips. The background is the
+  brand's rind colour so the mark keeps its contrast under every launcher mask shape.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_mark" />
+    <monochrome android:drawable="@drawable/ic_launcher_mark" />
+</adaptive-icon>
