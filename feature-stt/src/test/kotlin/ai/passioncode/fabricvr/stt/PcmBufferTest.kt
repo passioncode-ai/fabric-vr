@@ -100,22 +100,37 @@ class PcmBufferTest {
         val go = CountDownLatch(1)
         val done = CountDownLatch(producers)
         val drains = AtomicInteger(0)
+        // **The overlap is arranged, not hoped for.** The drainer used to be one more task in the
+        // pool, and nothing made it run before eight producers of 2 000 one-sample appends were
+        // done. On a two-core hosted runner they were sometimes done first, and the last assertion
+        // failed with "the drainer never ran" over a buffer that had lost nothing (PR #1's CI
+        // run, 2026-10-01; reproduced every time by delaying the drainer 500 ms). Each producer
+        // now stops halfway until the drainer has copied a non-empty buffer, so a drain is certain
+        // to land between appends, whatever the scheduler does.
+        val overlapped = CountDownLatch(1)
 
         repeat(producers) { p ->
             pool.execute {
                 go.await()
                 // One sample at a time, which is the worst case for the lock and the likeliest
                 // shape to interleave badly.
-                repeat(perProducer) { buffer.append(shortArrayOf((p + 1).toShort()), 1) }
+                repeat(perProducer) { i ->
+                    if (i == perProducer / 2) overlapped.await(30, TimeUnit.SECONDS)
+                    buffer.append(shortArrayOf((p + 1).toShort()), 1)
+                }
                 done.countDown()
             }
         }
         pool.execute {
             go.await()
-            while (done.count > 0L) { buffer.drain(); drains.incrementAndGet() }
+            while (done.count > 0L) {
+                val copy = buffer.drain()
+                drains.incrementAndGet()
+                if (copy.isNotEmpty()) overlapped.countDown()
+            }
         }
         go.countDown()
-        check(done.await(30, TimeUnit.SECONDS)) { "the producers did not finish — a deadlock, not a failed assertion" }
+        check(done.await(60, TimeUnit.SECONDS)) { "the producers did not finish — a deadlock, not a failed assertion" }
         pool.shutdown()
         pool.awaitTermination(10, TimeUnit.SECONDS)
 
@@ -126,6 +141,7 @@ class PcmBufferTest {
             assertEquals("producer ${p + 1} lost samples", perProducer, counts[(p + 1).toShort()])
         }
         assertTrue("the drainer never ran, so nothing was concurrent", drains.get() > 0)
+        assertEquals("no drain landed while the producers were mid-way, so nothing was concurrent", 0L, overlapped.count)
     }
 
     /**
