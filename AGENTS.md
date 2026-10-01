@@ -80,6 +80,17 @@ that needs a person is [docs/evidence/device-gate.md](docs/evidence/device-gate.
   (`LICENSE`, `COMMERCIAL-LICENSE.md`). Third-party code keeps its own licence: never relicense
   or strip a notice in `third_party/`, and a new or upgraded component gets its `NOTICE` entry in
   the same change (`DEC-0073`; `LicencesTest` compares the shipped copy byte for byte).
+- **Shared registers are edited under a lease.** [docs/AGENT_SYNC.md](docs/AGENT_SYNC.md)
+  (generated from `.claude/agent-sync.json` by `agent_sync.py setup`; never edited by hand) lists
+  the guarded files and the gate. Run `agent_sync.py acquire <file>` before editing one and
+  `agent_sync.py release <file>` after, on every path including failure. The lease is a ref under
+  `refs/agent-sync/leases/` on `origin`, so another contributor's agent sees it
+  (`git ls-remote origin 'refs/agent-sync/leases/*'`); the record plane is local (`fs`), and
+  `.agent-sync/` is git-ignored. `DEC` and `OQ` are not declared as `idRegisters` yet: agent-sync
+  1.21.0's `check` refuses a register on the `fs` plane although `reserve` allocates through
+  `refs/agent-sync/ids/` under a git lease (org-index `BACKLOG.md` X-7). Until that is fixed, take
+  the next free id only while holding the lease on its register, and land that edit on `main`
+  before releasing.
 
 ## Organisation
 
