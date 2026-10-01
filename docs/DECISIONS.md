@@ -4,7 +4,7 @@
 scope, security, data, pricing or process. Doctrine:
 `references/documentation.md`.
 
-**Next free ID:** `DEC-0101`
+**Next free ID:** `DEC-0102`
 
 Reading *"Next free ID"* is **not** reserving it — a second agent reading it in the
 same minute gets the same answer. Reserve it, then write.
@@ -3276,3 +3276,59 @@ one, leave its body intact. Never renumber. Never delete.
   Fabric Dashboards statement corrected), `docs/evidence/backlog.md` (`B-259` closed, `B-260`
   opened), `docs/handoff/2026-09-22-v3-entry.md`.
 - **Source:** operator, 2026-09-28 request and 2026-09-29 instruction to record it · Fabric ADR-0088
+
+### DEC-0101 — A reference to the pre-publication history is NOT_CHECKED, and the list of them is closed
+
+- **Date:** 2026-10-01
+- **Status:** Accepted
+- **Context:** on 2026-09-30 this repository was re-created as a public repository with one clean
+  history. Its root is `2536a3d`, and its tree is identical to the last commit of the private
+  history before it. That earlier history no longer exists anywhere: there is no bundle and no
+  mirror. The dated records under `docs/evidence/` cite **472** commit references to **99** of its
+  commits, and `check-docs.sh` §9 refused every one as "does not resolve". So `check-all.sh` was
+  red on `main`, the pre-push hook refused every push, and `selftest.sh` failed six cases on a clean
+  tree (47 passed, 6 failed, measured on a fresh clone of `2536a3d`):
+  - three cases failed through the same red. These were the documentation gate's clean-tree control,
+    the KDoc-line control of §23, and case 164. Case 164 runs `check-all.sh` and expects the
+    verdict-floor message, and `check-docs.sh` stopped the run before any floor was read;
+  - the three device-gate cases took the real root commit as their base. With a one-commit history
+    that base was HEAD, so `check-device-gate.sh` exited at "no instrumented sources changed"
+    before any check.
+- **Decision.**
+  - **A reference is repinned only when its claim is about a file's current content, and only after
+    that claim is re-verified at the new commit.** Exactly one place qualifies:
+    `docs/evidence/2026-09-25-round3.md` linked three source anchors at the old implementation
+    commit. Each anchor was re-read at `2536a3d` and still opens on the function the link names, so
+    the links now point there; the old URLs answer 404 and the new ones 200 (measured 2026-10-01).
+    That document's own commit reference stays as written. It names the commit the work was done
+    at, and the new root is not that commit.
+  - **Every other reference is history.** It stays in place, because a dated record is not rewritten
+    to name a commit it never described, and deleting it would make the gate pass by hiding the
+    finding. Its commit is listed once in `docs/pre-publication-commits.txt`, spelled the way the
+    documents spell it.
+  - `check-docs.sh` §9 reports a reference to a listed commit as **NOT_CHECKED** on a line of its
+    own, every run, with the count. It does not count that reference in its `ok:` line, which says
+    how many references it actually followed. The section still refuses:
+    - a reference to any unlisted commit that does not resolve or does not reach HEAD (unchanged);
+    - a listed commit that is reachable from HEAD, which belongs to this history and can be checked;
+    - any change to the set of listed commits. The digest of the entries is pinned in the gate, so
+      the list cannot grow into the place every future dead reference would pass through. Changing
+      it is a new decision, and the digest moves in the same change.
+  - The unused `docgate:known-dead` marker is removed. It let a marker anywhere in the corpus exempt
+    a commit, and the exempted reference passed without a word.
+  - The device-gate self-test cases run against a **fixture history** built in the case's copy.
+    That history has a base without `app/src/androidTest`, a commit that adds it, and a ledger row
+    with the Result under test. Nothing then depends on which commits this repository happens to
+    have. A fourth case covers the ledger as it is now: every row names a commit this clone lacks.
+    `check-device-gate.sh` used to call that ledger one that "records nothing", which was false, and
+    now names it as pre-publication history. The remedy is the same: a new row.
+- **What it costs:** the 472 references can no longer be checked by anyone, and the gate says so
+  rather than implying it did. `scripts/exposure.sh` still counts the ledger rows that name these
+  commits as `unresolvable`. Its own definition says exactly this ("the commit does not resolve
+  here"), so it is unchanged.
+- **Consequences / affects:** `scripts/check-docs.sh` (§9), `scripts/check-device-gate.sh`,
+  `scripts/selftest.sh`, `docs/pre-publication-commits.txt` (new),
+  `docs/evidence/2026-09-25-round3.md` (three links repinned), `docs/DOCMAP.md` (register row,
+  Verification row), `docs/handoff/2026-09-22-v3-entry.md`.
+- **Source:** operator, 2026-10-01 instruction to make the gate honestly green on a fresh clone
+  after the public re-creation of 2026-09-30 · branch `agent/pre-publication-gate`
