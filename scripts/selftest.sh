@@ -347,37 +347,59 @@ p.wait()\"" \
 # The audit of 2026-09-21 found this script planting nothing at all into `check-device-gate.sh`,
 # and the gate meanwhile answering `ok: … contains the change` over a row that says **not run**.
 # Six of the last seven rows said that, so the sentence covered nearly the whole ledger.
-# The base is the root commit, not `origin/main`: the gate only reads the ledger when instrumented
-# sources changed since its base, and on the one branch (`DEC-0099`) HEAD is `origin/main`, so that
-# base made the gate exit before any check and these three cases fail on every clean `main`.
-DEVGATE="bash scripts/check-device-gate.sh $(git rev-list --max-parents=0 HEAD | tail -1)"
+#
+# **These cases run against a FIXTURE history, never this repository's** (`DEC-0101`). They used
+# to take the real root commit as the base and rewrite the newest real row, which made them a
+# claim about the shape of this repository's history: when it was re-published on 2026-09-30 as
+# ONE commit, the base became HEAD, the gate exited at "no instrumented sources changed" before
+# any check, and all three cases failed on a clean `main` while the gate itself was unchanged.
+# The gate's subject is three facts — the suite changed since a base, the newest row's commit
+# contains that change, and what the row's Result cell says — and a fixture can state all three
+# without depending on which commits happen to exist.
+#
+# `devgate_fixture <result-cell>` turns the case's copy into its own repository: a base commit
+# without `app/src/androidTest`, a commit that adds it, and a ledger row naming that commit with
+# the given Result. **It removes the copy's `.git` only when that is the symlink `prepare` made,
+# and refuses otherwise** — the symlink points at the real repository, and this script's header
+# forbids writing through it. Removing a symlink never touches its target.
+# `NOROW` builds the history and appends no row: the ledger then holds only rows whose commits
+# this fixture has never had, which is the shape of the real ledger after publication.
+devgate_fixture() {
+  [ -L .git ] || { echo "devgate_fixture: .git is not the copy's symlink — refusing to touch it"; return 1; }
+  rm .git
+  git init -q . && fx add -A && fx rm -r -q --cached app/src/androidTest &&
+    fx commit -q -m 'fixture: before the instrumented suite' && fx tag fixture-base &&
+    fx add -A && fx commit -q -m 'fixture: the instrumented suite changes' || return 1
+  if [ "$1" = NOROW ]; then
+    printf '\nA line the fixture commits so the plant is visible in the tree.\n' >> README.md
+  else
+    printf '| 2026-10-01 | `%s` | — | `device-unknown` | %s | selftest fixture row |\n' \
+      "$(git rev-parse --short HEAD)" "$1" >> docs/evidence/device-gate.md
+  fi
+  fx add -A && fx commit -q -m 'fixture: the ledger row'
+}
+# The fixture's git: no hooks, no signing, an identity of its own, so nothing in the machine's
+# configuration can make a fixture commit fail or prompt.
+fx() { git -c core.hooksPath=/dev/null -c commit.gpgsign=false -c user.name=selftest -c user.email=selftest@invalid "$@"; }
+DEVGATE='bash scripts/check-device-gate.sh fixture-base'
 
-case_says "device-gate an acknowledgement says so instead of claiming a run" NOPLANT \
+case_says "device-gate an acknowledgement says so instead of claiming a run" \
+  "devgate_fixture '**not run**'" \
   "$DEVGATE" "ACKNOWLEDGEMENT"
 
 case_says "device-gate an executed row is reported as a run" \
-  "python3 - <<'P'
-import pathlib
-p = pathlib.Path('docs/evidence/device-gate.md'); t = p.read_text().split('\n')
-for i in range(len(t) - 1, -1, -1):
-    if t[i].startswith('| 2026') and 'not run' in t[i]:
-        t[i] = t[i].replace('**not run**', '**99 run, 0 red**')
-        break
-p.write_text('\n'.join(t))
-P" \
+  "devgate_fixture '**99 run, 0 red**'" \
   "$DEVGATE" "RAN: 99 run, 0 red"
 
 case_fails "device-gate a newest row whose Result cell cannot be read" \
-  "python3 - <<'P'
-import pathlib, re
-p = pathlib.Path('docs/evidence/device-gate.md'); t = p.read_text().split('\n')
-for i in range(len(t) - 1, -1, -1):
-    if t[i].startswith('| 2026') and 'not run' in t[i]:
-        t[i] = t[i].replace('**not run**', '')
-        break
-p.write_text('\n'.join(t))
-P" \
+  "devgate_fixture ''" \
   "$DEVGATE" "certifies nothing"
+
+# The ledger after publication: thirty rows, none of whose commits this history has. The gate
+# said "has no commit in any row, so it records nothing" about it, which was false.
+case_fails "device-gate a changed suite whose every row names a commit this history lacks" \
+  "devgate_fixture NOROW" \
+  "$DEVGATE" "pre-publication history"
 
 # ---- §23, the current handoff's numbers are the tree's
 #
@@ -522,6 +544,26 @@ i = s.index('| 2026-09-21 | Step 11')
 p.write_text(s[:i] + '| 2026-09-21 | Planted | \`deadbee1\` | x | — |\n' + s[i:])
 P" \
   "$GATE" "does not resolve"
+
+# **The pre-publication list is a third state, not a hole** (`DEC-0101`). The case above is the
+# half that matters most: a reference to a missing commit that is NOT on the list is still refused.
+# The three below hold the list itself to what it claims — reported rather than passed, closed,
+# and true about every entry.
+case_says "9 a pre-publication reference is reported NOT_CHECKED, not passed" NOPLANT \
+  "$GATE" "commit(s) of the pre-publication history"
+
+case_fails "9 the pre-publication list grown to let a new dead reference through" \
+  "printf 'deadbee1\n' >> docs/pre-publication-commits.txt && python3 - <<'P'
+import pathlib
+p = pathlib.Path('docs/evidence/retro.md'); s = p.read_text()
+i = s.index('| 2026-09-21 | Step 11')
+p.write_text(s[:i] + '| 2026-09-21 | Planted | \`deadbee1\` | x | — |\n' + s[i:])
+P" \
+  "$GATE" "the pre-publication list changed"
+
+case_fails "9 a listed commit that this history has" \
+  "git rev-parse --short HEAD >> docs/pre-publication-commits.txt" \
+  "$GATE" "as pre-publication, but reachable from HEAD"
 
 # The other branch of §9 — a commit that RESOLVES but is unreachable from HEAD, the
 # amended-away case — cannot be planted from a fixture, because a dangling commit is not stable

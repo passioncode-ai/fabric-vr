@@ -19,12 +19,13 @@ The message looks like this, and it is not a generic build error:
   Open this report for more details: file://…/build/reports/dependency-verification/…/dependency-verification-report.html
 ```
 
-**There are exactly two causes and neither is fixed by turning verification off.**
+**There are three causes and none of them is fixed by turning verification off.**
 
 | Cause | How you know | What to do |
 |---|---|---|
 | **The metadata is stale** — somebody bumped a version, added a dependency, or a transitive moved under one | the named artefact belongs to something that just changed in `gradle/libs.versions.toml`, or to its dependency tree | regenerate, deliberately, from a green tree — section 2 |
 | **The artefact changed under a version that did not** | the named artefact belongs to nothing anybody touched | **stop.** This is the case the file exists for. Compare the checksum in the report against the publisher's, on another machine or another network, before doing anything else |
+| **The artefact exists for one platform only, and the metadata was generated on another** | the name carries a platform suffix, e.g. `aapt2-…-linux.jar`, and the metadata holds only its sibling (`-osx.jar`) | add that one artefact from the publisher's own checksum, and only when a local download hashes to the same value. `aapt2` is the one such artefact today. Generating on macOS never resolves its Linux jar, so hosted CI on Ubuntu refused every build until the Linux entry was added on 2026-10-01: Google Maven's `.sha256` matched a local download. There is still no `-windows.jar` entry, because no Windows build has run |
 
 **Never**:
 

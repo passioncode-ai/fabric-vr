@@ -592,12 +592,62 @@ elif [ ! -d "$RETRO_GLOB" ]; then
   dormant "commit-SHA resolution — no $RETRO_GLOB yet"
 else
   : > "$TMP/sha"
-  # An enumerated exception, never a floor. A commit whose history was rewritten before any
-  # of this was gated cannot be repaired without inventing a mapping, and a frozen record of
-  # a past run is not rewritten. Such SHAs are listed by name in a `docgate:known-dead`
-  # marker inside the retro corpus itself — one home, with the reason in prose beside it —
-  # so this passes over exactly those and still fails on the next one.
-  DEAD=$(grep -rho 'docgate:known-dead[^>]*' "$RETRO_GLOB" 2>/dev/null | sed 's/docgate:known-dead//' | tr -s ' \n' ' ')
+  # **The pre-publication history: a closed list, reported, never passed** (`DEC-0101`).
+  #
+  # On 2026-09-30 this repository was re-created public with one clean history whose root is
+  # `$PREPUB_ROOT`, and the history before it no longer exists anywhere. The dated records under
+  # `docs/evidence/` cite 99 of its commits, and each such reference now fails this section the
+  # same way a typo would. Neither obvious repair is honest: deleting the references rewrites the
+  # records, and pointing them at the new root claims a commit they never described.
+  #
+  # So those commits are a third state beside "resolves" and "does not": **NOT_CHECKED**. They
+  # are named in ONE file, `$PREPUB_FILE`, spelled as the documents spell them, and that file is
+  # closed — the digest of its entries is pinned below, so the list cannot grow quietly into the
+  # hole every future dead reference would walk through. What the section still guarantees:
+  #
+  #   - a reference to a commit that is NOT listed and does not resolve is refused, as before;
+  #   - a listed commit that IS reachable from HEAD is refused: it belongs to this history, so
+  #     the list is wrong about it, and calling it unverifiable would hide a checkable reference;
+  #   - every reference to a listed commit is counted and printed as NOT_CHECKED, never folded
+  #     into the `ok:` line, which counts only what it actually followed.
+  #
+  # This replaces the `docgate:known-dead` marker, which no document used: it let a marker
+  # anywhere in the corpus exempt a SHA, and an exempted reference passed in silence.
+  PREPUB_FILE=${PREPUB_FILE:-$DOCS_DIR/pre-publication-commits.txt}
+  PREPUB_ROOT=2536a3d1d184bcf38c559c7d16fe3dd00531d3fa
+  PREPUB_DIGEST=8a6c366f79ba94f52ca5834cef93dc630fd16242727f781e9e25db3deeec3c0b
+  : > "$TMP/prepub"
+  if [ -f "$PREPUB_FILE" ]; then
+    grep -vE '^[[:space:]]*(#|$)' "$PREPUB_FILE" | grep -vE '^[0-9a-f]{7,40}$' > "$TMP/prepubbad" || true
+    if [ -s "$TMP/prepubbad" ]; then
+      err "$PREPUB_FILE: line(s) that are neither a comment nor one commit id:"
+      sed 's/^/         /' "$TMP/prepubbad"
+    fi
+    grep -E '^[0-9a-f]{7,40}$' "$PREPUB_FILE" | sort -u > "$TMP/prepub" || true
+    _digest=$(grep -E '^[0-9a-f]{7,40}$' "$PREPUB_FILE" | sort | shasum -a 256 | cut -d' ' -f1)
+    if [ "$_digest" != "$PREPUB_DIGEST" ]; then
+      err "the pre-publication list changed: $PREPUB_FILE has $(wc -l < "$TMP/prepub" | tr -d ' ') entries with digest $_digest,"
+      echo "         and this gate pins $PREPUB_DIGEST. The list is closed (DEC-0101): an entry added"
+      echo "         here is a dead reference let through. Changing it is a new decision, and its digest"
+      echo "         changes in this script in the same change."
+    fi
+    # A listed commit this history CAN follow is not pre-publication. Asked the same way the
+    # candidates are asked below: does it resolve, and does it reach HEAD.
+    if [ -s "$TMP/prepub" ]; then
+      sed 's/$/^{commit}/' "$TMP/prepub" | git cat-file --batch-check 2>/dev/null > "$TMP/prepubres" || true
+      git rev-list HEAD 2>/dev/null > "$TMP/prepubreach" || : > "$TMP/prepubreach"
+      awk '
+        FILENAME == ARGV[1] { if (NF >= 2 && $2 == "commit") ok[$1] = 1; next }
+        { reach[$0] = 1 }
+        END { for (r in ok) if (r in reach) print r }
+      ' "$TMP/prepubres" "$TMP/prepubreach" > "$TMP/prepubreachable"
+      if [ -s "$TMP/prepubreachable" ]; then
+        err "listed in $PREPUB_FILE as pre-publication, but reachable from HEAD — this history has it:"
+        sed 's/^/         /' "$TMP/prepubreachable"
+      fi
+    fi
+  fi
+  : > "$TMP/shaprepub"
   # **Two git processes for the whole corpus, not two per SHA.** This ran `rev-parse --verify`
   # and `merge-base --is-ancestor` per candidate: 410 SHAs here, 820 spawns, **15 of the gate's
   # 42 seconds** — measured 2026-09-21, and the single largest cost in a check that runs before
@@ -613,7 +663,10 @@ else
     while IFS=: read -r ln tok; do
       s=$(echo "$tok" | tr -d '`')
       case ${#s} in 7|8|9|10|11|12|40) ;; *) continue ;; esac
-      case " $DEAD " in *" $s "*) continue ;; esac
+      if grep -qxF "$s" "$TMP/prepub" 2>/dev/null; then
+        printf '%s\t%s\t%s\n' "$f" "$ln" "$s" >> "$TMP/shaprepub"
+        continue
+      fi
       printf '%s\t%s\t%s\n' "$f" "$ln" "$s" >> "$TMP/shacand"
     done
   done
@@ -669,10 +722,23 @@ else
       }
     ' "$TMP/sharesolved" "$TMP/shareach" "$TMP/shacand" | sort -u >> "$TMP/sha"
   fi
+  _checked=$(sort -u "$TMP/shacand" 2>/dev/null | wc -l | tr -d ' ')
   if [ -s "$TMP/sha" ] 2>/dev/null; then
     err "commit reference(s) a clone could not follow:"; sed 's/^/         /' "$TMP/sha"
   else
-    ok "every commit reference in $RETRO_GLOB resolves AND is reachable from HEAD"
+    ok "every commit reference in $RETRO_GLOB to this history resolves AND is reachable from HEAD ($_checked checked)"
+  fi
+  # Printed on every run, zero included, so a reader can see how much of the corpus was NOT
+  # followed. The word is deliberately not `ok:` and not counted by `check-all.sh`'s floor.
+  _np=$(sort -u "$TMP/shaprepub" | wc -l | tr -d ' ')
+  _nc=$(cut -f3 "$TMP/shaprepub" | sort -u | wc -l | tr -d ' ')
+  echo "NOT_CHECKED: $_np commit reference(s) to $_nc commit(s) of the pre-publication history, before $(echo "$PREPUB_ROOT" | cut -c1-7)"
+  echo "         ($PREPUB_FILE, DEC-0101). That history no longer exists; nothing here followed them."
+  # An entry no document cites any longer is harmless, but the list is meant to be exact.
+  if [ -s "$TMP/prepub" ]; then
+    cut -f3 "$TMP/shaprepub" | sort -u > "$TMP/prepubcited"
+    _unused=$(comm -23 "$TMP/prepub" "$TMP/prepubcited" | wc -l | tr -d ' ')
+    [ "$_unused" -eq 0 ] || echo "info:    $_unused entr(ies) of $PREPUB_FILE are cited by no document under $RETRO_GLOB"
   fi
 fi
 
