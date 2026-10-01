@@ -57,17 +57,17 @@ jobs:
     if: ${{ !cancelled() && (github.event_name != 'schedule' || needs.gate.outputs.run == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive   # third_party/whisper.cpp; feature-stt's CMake guard needs it
           fetch-depth: 0          # check-docs.sh resolves commit SHAs against history
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'      # matches the JBR this project is developed on
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
 
       # One script, so "green locally" and "green in CI" cannot mean different sets of checks.
       # No NDK is installed in this job on purpose: measured 2026-09-20, testDebugUnitTest's task
@@ -103,7 +103,7 @@ jobs:
     needs: gate
     if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.gate.outputs.run == 'true') }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
           # **`check-docs.sh` resolves commit SHAs against history**, and `VersionCodeTest`
@@ -118,12 +118,12 @@ jobs:
           # releasing an unorderable APK.
           fetch-depth: 0
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
         with:
           cache-disabled: true
 
@@ -140,7 +140,7 @@ jobs:
     if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || (needs.gate.outputs.run == 'true' && github.ref == 'refs/heads/main')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
           # **`check-docs.sh` resolves commit SHAs against history**, and `VersionCodeTest`
@@ -155,7 +155,7 @@ jobs:
           # releasing an unorderable APK.
           fetch-depth: 0
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
@@ -177,12 +177,12 @@ jobs:
         env:
           NDK_VERSION: '27.2.12479018'   # feature-stt/build.gradle.kts:9 — keep the two in step
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
 
       # The .cxx tree is what makes a second run cheap; without it every run recompiles
       # whisper.cpp for arm64 from scratch.
       - name: cache the native build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             feature-stt/.cxx
@@ -206,7 +206,7 @@ jobs:
       # takes its unsigned branch and logs that it did. It proves R8, the NDK and the manifest
       # merge — not signing, and not that any headset will install it. Signing is T-039, the
       # install procedure is T-037, publishing is T-041.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: app-release-unsigned-${{ github.run_number }}
           path: app/build/outputs/apk/release/*.apk
