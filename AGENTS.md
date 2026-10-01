@@ -86,11 +86,14 @@ that needs a person is [docs/evidence/device-gate.md](docs/evidence/device-gate.
   `agent_sync.py release <file>` after, on every path including failure. The lease is a ref under
   `refs/agent-sync/leases/` on `origin`, so another contributor's agent sees it
   (`git ls-remote origin 'refs/agent-sync/leases/*'`); the record plane is local (`fs`), and
-  `.agent-sync/` is git-ignored. `DEC` and `OQ` are not declared as `idRegisters` yet: agent-sync
-  1.21.0's `check` refuses a register on the `fs` plane although `reserve` allocates through
-  `refs/agent-sync/ids/` under a git lease (org-index `BACKLOG.md` X-7). Until that is fixed, take
-  the next free id only while holding the lease on its register, and land that edit on `main`
-  before releasing.
+  `.agent-sync/` is git-ignored.
+- **Ids are reserved, not read.** `DEC` (`docs/DECISIONS.md`) and `OQ` (`docs/OPEN_QUESTIONS.md`)
+  are `idRegisters`: run `agent_sync.py reserve DEC` (or `OQ`) and write the number it returns. The
+  allocator is a compare-and-swap on `refs/agent-sync/ids/<REG>` on `origin`, so two machines cannot
+  take one number; the register's **Next free ID** line is its floor, so move it forward in the
+  same edit. A number reserved and then not used is recorded with `agent_sync.py release-id <REG> <n>`; the
+  counter never moves back, so that number stays a hole rather than being handed out twice. `check`
+  accepts these registers on the `fs` record plane from agent-sync 1.21.1.
 
 ## Organisation
 

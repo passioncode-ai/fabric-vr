@@ -1,4 +1,4 @@
-<!-- agent-sync:generated source=fabric-vr@2536a3d cfg=b3c55c41532f at=2026-09-30T23:50:29Z — regenerate with `agent_sync.py setup`, do not hand-edit -->
+<!-- agent-sync:generated source=fabric-vr@92ebf55 cfg=225482ce4f10 at=2026-10-01T04:02:51Z — regenerate with `agent_sync.py setup`, do not hand-edit -->
 
 # How documentation and coordination work in fabric-vr
 
@@ -23,7 +23,14 @@ them is the finding.** Reconcile before starting a task and after finishing it.
 
 ### Id registers — reserve before you write
 
-None declared here. Ids live in the parent repository; reserve them there.
+| Register | File | Reserve with |
+|---|---|---|
+| `DEC` | `docs/DECISIONS.md` | `agent_sync.py reserve DEC` |
+| `OQ` | `docs/OPEN_QUESTIONS.md` | `agent_sync.py reserve OQ` |
+
+Reading a *next free id* line is **not** reserving it — two agents read the same number.
+
+Ids are allocated by compare-and-swap on refs/agent-sync/ids/* at 'origin'.
 
 ### Guarded files — a live lease is required to write these
 
