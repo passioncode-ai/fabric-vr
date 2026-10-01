@@ -1,4 +1,4 @@
-# The gates, on every push.
+# The gates on every push; the cold dependency job and the release build in the nightly batch.
 #
 # This file exists because three defects in this project survived for an unknown period each, and
 # every one of them is caught by a command that already existed and that nobody ran:
@@ -17,10 +17,15 @@ name: ci
 on:
   push:
   pull_request:
-  # 04:40 UTC daily, for the cold dependency job below. A supply-chain substitution that only
-  # shows on a cold cache would otherwise be found by whoever next clears theirs.
+  # The nightly batch at 23:00 Europe/Warsaw (operator's CI policy of 2026-09-25, org-index
+  # docs/CI-BATCHING.md) runs the cold dependency job and the release build below. A
+  # supply-chain substitution that only shows on a cold cache would otherwise be found by whoever
+  # next clears theirs. A manual dispatch runs them for an urgent candidate:
+  # `gh workflow run ci.yml --ref <branch>`.
   schedule:
-    - cron: '40 4 * * *'
+    - cron: '0 21 * * *'   # 23:00 Warsaw in summer time
+    - cron: '0 22 * * *'   # 23:00 Warsaw in winter time
+  workflow_dispatch:
 
 # A second push to the same branch cancels the first: the interesting answer is always about the
 # newest commit.
@@ -32,8 +37,24 @@ permissions:
   contents: read
 
 jobs:
+  # Two crons cover both offsets of Europe/Warsaw; only the one that lands on 23:00 local runs
+  # the batch, so it runs once a night, not twice.
+  gate:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      run: ${{ steps.hour.outputs.run }}
+    steps:
+      - id: hour
+        run: |
+          h=$(TZ=Europe/Warsaw date +%H)
+          if [ "$h" = 23 ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "not 23:00 in Warsaw ($h); skipping this cron"; echo "run=false" >> "$GITHUB_OUTPUT"; fi
+
   checks:
     name: gates and unit tests
+    needs: gate
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || needs.gate.outputs.run == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -79,7 +100,8 @@ jobs:
   dependencies:
     name: dependency verification, cold
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.ref == 'refs/heads/main'
+    needs: gate
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.gate.outputs.run == 'true') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -112,9 +134,10 @@ jobs:
 
   release:
     name: release build
-    # The expensive job: the NDK, whisper.cpp for arm64, R8. `main` only — the one branch since
-    # `DEC-0099` — so a scratch branch does not pay for a typo.
-    if: github.ref == 'refs/heads/main'
+    # The expensive job: the NDK, whisper.cpp for arm64, R8. In the nightly batch on `main` (the
+    # one branch since `DEC-0099`), or on a manual dispatch — never per push.
+    needs: gate
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || (needs.gate.outputs.run == 'true' && github.ref == 'refs/heads/main')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
