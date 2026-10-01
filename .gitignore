@@ -31,3 +31,7 @@ release-lineage.bin
 /app/src/main/assets/*.bin
 docs/ux/__pycache__/
 __pycache__/
+
+# agent-sync: local state and the credentials file are never committed
+.env.agent-sync
+.agent-sync/

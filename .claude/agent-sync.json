@@ -1,0 +1,28 @@
+{
+  "backend": "fs",
+  "leaseBackend": "git",
+  "leaseRemote": "origin",
+  "integrationBranch": "main",
+  "leaseTtlSeconds": 2700,
+  "renewIntervalSeconds": 300,
+  "gated": true,
+  "idRegisters": {},
+  "guardedFiles": [
+    "docs/DECISIONS.md",
+    "docs/OPEN_QUESTIONS.md",
+    "docs/evidence/backlog.md",
+    "docs/evidence/verification.md"
+  ],
+  "claimTags": {},
+  "gates": [
+    "bash scripts/check-all.sh"
+  ],
+  "mirror": {
+    "enabled": false,
+    "sources": []
+  },
+  "mergeLog": {
+    "file": "docs/MERGES.md",
+    "retentionDays": 7
+  }
+}
