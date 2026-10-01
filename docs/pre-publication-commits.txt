@@ -1,0 +1,118 @@
+# Pre-publication commits — references the documentation gate cannot recheck (DEC-0101)
+#
+# On 2026-09-30 this repository was re-created as a public repository with one clean history.
+# Its root is 2536a3d1d184bcf38c559c7d16fe3dd00531d3fa, whose tree is identical to the last
+# commit of the earlier private history. That earlier history no longer exists anywhere: no
+# bundle, no mirror, no clone that the project keeps. The dated documents under docs/evidence/
+# still cite its commits, because they are records of what was true at the time, and a
+# record is not rewritten to point at a commit it never described.
+#
+# Every line below that is not a comment is one such commit, spelled exactly as the documents
+# cite it. `scripts/check-docs.sh` section 9 reads this file and:
+#
+#   - prints every reference to a listed commit as NOT_CHECKED. It never counts one as a pass;
+#   - still refuses a reference to any OTHER commit that does not resolve, or does not reach HEAD;
+#   - refuses an entry that is reachable from HEAD, because such a commit is in this history;
+#   - refuses any change to the set of entries, because their digest is pinned in the gate.
+#
+# The list is CLOSED. Adding an entry is how a new dead reference would be let through, so it
+# takes a new decision and a change to the digest in the gate, made in the same change.
+00ed7b7
+0a5b5fa
+0b9b47c
+0da9403
+0dcadae
+10d5c7f
+11139c6
+1252416
+15e3ccb
+16a5fb5
+17fdfd7
+1c1b781
+1d2ce5d
+1fb8510
+28c513d
+2f91df7
+324caaa
+325e100
+347fd6e
+397be45
+3be95c8
+3c18fa6
+407d412
+407d41215f1ce2d712eb2f6643a43acd88d81dcd
+41b4a95
+421377e
+4872529
+4bddfcc
+4f9cbf6
+52f1eac
+5414eac
+5729c8b
+5e57192
+5ef1db4
+5fd2f9b
+662e4ad
+6a8bec4
+6fa6ec7
+6fe7110
+732c92b
+739e842
+78d9cdd
+795ac9b
+7a15abb
+7c0b438
+7d5e680
+7dbb1f7
+7e22df4
+830ad0a
+8327b76
+844321b
+8772eaa
+8808458
+8c5ff9e
+8ef8677
+8f7cb65
+901bbbd
+93cab4b
+986140f
+9951807
+9bae2bd
+9be90d1
+9d9d716
+9daec47
+a4586bb
+a6d7469
+ac4c29e
+ad8bf66
+b0a1a55
+b0e0c7d
+b32af38
+bb82929
+c4833ea
+c4a012b
+c4d290e
+c57c566
+c650a45
+ca87cd7
+cf551cb
+d533e0b
+d6ee7ff
+d70eea5
+d91001d
+d9967a3
+dc385ff
+dcb956e
+deb604d
+e0d4791
+e235a81
+e490863
+e564ee6
+eaf0c51
+eb8e237
+edb3089
+f770049
+f7d656d
+f932ac1
+fae0785
+ff7787b

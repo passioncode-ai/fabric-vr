@@ -46,7 +46,22 @@ for sha in $(awk -F'|' '/^\| *[0-9]{4}-[0-9]{2}-[0-9]{2} *\|/ { gsub(/[ `]/, "",
   if [ "$at" -gt "$newest_at" ]; then newest_at=$at; newest=$sha; fi
 done
 if [ -z "$newest" ]; then
-  echo "ERR: $LEDGER has no commit in any row, so it records nothing"
+  # **Two different findings, and this printed one sentence for both.** A ledger with no commit
+  # in any row records nothing. A ledger whose rows all name commits this clone cannot find
+  # records a past nobody here can follow — which is every row of this one since the repository
+  # was re-published with a new root on 2026-09-30 (`DEC-0101`). The remedy is the same, a new
+  # row for this change, but "records nothing" about thirty rows of history is false.
+  named=$(awk -F'|' '/^\| *[0-9]{4}-[0-9]{2}-[0-9]{2} *\|/ { gsub(/[ `]/, "", $3); if ($3 ~ /^[0-9a-f]{7,40}$/) n++ } END { print n + 0 }' "$LEDGER")
+  if [ "$named" -gt 0 ]; then
+    echo "ERR: no commit named by the $named dated rows of $LEDGER resolves in this clone — they are the"
+    echo "     pre-publication history (DEC-0101), or a history this checkout does not have. No row can"
+    echo "     certify these instrumented changes:"
+    echo "$changed" | sed 's/^/       /'
+    echo "     Run the suite on a headset and append a row naming a commit in this history, or append"
+    echo "     a row saying it was not run and why. $LEDGER is append-only."
+  else
+    echo "ERR: $LEDGER has no commit in any row, so it records nothing"
+  fi
   exit 1
 fi
 
