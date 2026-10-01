@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.runCurrent
@@ -434,21 +435,43 @@ class NotesRepositoryTest {
      * `E-12`. `observeTags()` runs a second full scan and is `combine`d with the list, so every
      * autosave emitted a second, identical state. The scan still runs — a normalised tag table is
      * schema v4 and belongs after the migration harness — but an unchanged list stops re-emitting.
+     *
+     * **Room runs on the test's own scheduler here, so the order is the test's, not the pool's.**
+     * With the default executors the re-query after a write runs on Room's query pool, and the test
+     * used to read `seen` the moment the third `upsert` returned. Whether that re-query had landed
+     * was up to the thread scheduler: on 2026-10-01 a cold CI runner read `[[]]` and failed on the
+     * last assertion (run 36812263991). Pinning that interleaving — the first query before the
+     * writes, every later query 500 ms late — fails the old body on every run with the same
+     * `expected:<[идея]> but was:<[]>`. With `setQueryCoroutineContext` the invalidation, the
+     * re-query and the emission are all tasks on `testScheduler`, and `runCurrent()` after each
+     * write has run them, so every write is observed before the next one starts and the count can
+     * be exact. Removing `distinctUntilChanged` from `observeTags` turns this into
+     * `[[], [идея], [идея], [идея]]`.
      */
     @Test fun `the tag list does not re-emit when nothing about tags changed`() = runTest {
-        val seen = mutableListOf<List<String>>()
-        val job = launch(UnconfinedTestDispatcher(testScheduler)) { repo.observeTags().toList(seen) }
+        val onTestClock = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), NotesDatabase::class.java)
+            .setQueryCoroutineContext(StandardTestDispatcher(testScheduler))
+            .build()
+        try {
+            val tags = RoomNotesRepository(onTestClock.noteDao())
+            val seen = mutableListOf<List<String>>()
+            backgroundScope.launch { tags.observeTags().toList(seen) }
+            runCurrent()
+            assertEquals("the collector did not see the empty base", listOf(emptyList<String>()), seen)
 
-        repeat(3) { repo.upsert(NotesRepository.newNote("", "мысль про #идея $it")).getOrThrow() }
+            repeat(3) {
+                tags.upsert(NotesRepository.newNote("", "мысль про #идея $it")).getOrThrow()
+                runCurrent()
+            }
 
-        job.cancel()
-        // Not an exact count — when the collector attaches relative to the first write is a
-        // scheduling detail, and pinning it would make this a test about the dispatcher. What
-        // must be true is that three writes carrying the same tag do not produce three
-        // identical emissions.
-        assertEquals("an identical tag list was emitted twice in a row: $seen", seen.distinct(), seen)
-        assertTrue("every write re-emitted the tag list: $seen", seen.size < 3)
-        assertEquals(listOf("идея"), seen.last())
+            assertEquals(
+                "three writes carrying the same tag must produce one new tag list, not three",
+                listOf(emptyList(), listOf("идея")),
+                seen,
+            )
+        } finally {
+            onTestClock.close()
+        }
     }
 
     /** `observeByTag` stays unbounded on purpose; a single tag's notes are a subset by construction. */
