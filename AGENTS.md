@@ -47,7 +47,8 @@ git config core.hooksPath .githooks    # once per clone: pre-push refuses a tree
 
 The register of every gate, in execution order, is the Gates section of
 [docs/DOCMAP.md](docs/DOCMAP.md). It is not restated here. `.github/workflows/ci.yml` runs the
-gates and the release build. It cannot run the instrumented suite, which needs a headset. The walk
+gates on every push, and the cold dependency job and the release build in the 23:00
+Europe/Warsaw nightly batch or on a manual dispatch. It cannot run the instrumented suite, which needs a headset. The walk
 that needs a person is [docs/evidence/device-gate.md](docs/evidence/device-gate.md).
 
 ## Local rules
