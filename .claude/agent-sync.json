@@ -6,7 +6,16 @@
   "leaseTtlSeconds": 2700,
   "renewIntervalSeconds": 300,
   "gated": true,
-  "idRegisters": {},
+  "idRegisters": {
+    "DEC": {
+      "file": "docs/DECISIONS.md",
+      "pattern": "\\*\\*Next free ID:\\*\\* `DEC-(\\d{4})`"
+    },
+    "OQ": {
+      "file": "docs/OPEN_QUESTIONS.md",
+      "pattern": "\\*\\*Next free ID:\\*\\* `OQ-(\\d{4})`"
+    }
+  },
   "guardedFiles": [
     "docs/DECISIONS.md",
     "docs/OPEN_QUESTIONS.md",
