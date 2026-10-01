@@ -20,7 +20,9 @@
     "docs/DECISIONS.md",
     "docs/OPEN_QUESTIONS.md",
     "docs/evidence/backlog.md",
-    "docs/evidence/verification.md"
+    "docs/evidence/verification.md",
+    "docs/backlog-sources.json",
+    "docs/backlog.md"
   ],
   "claimTags": {},
   "gates": [

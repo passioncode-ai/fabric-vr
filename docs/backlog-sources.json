@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/passioncode-ai/fabric-vr",
+  "sources": [
+    {
+      "path": "docs/evidence/backlog.md",
+      "goal": "agent-workplace",
+      "kind": "tasks",
+      "format": "table",
+      "idColumn": "id",
+      "titleColumn": "What",
+      "statusColumn": "State"
+    },
+    {
+      "path": "docs/OPEN_QUESTIONS.md",
+      "goal": "agent-workplace",
+      "kind": "tasks",
+      "format": "table",
+      "idColumn": "ID",
+      "titleColumn": "Question",
+      "statusColumn": "Status"
+    }
+  ]
+}

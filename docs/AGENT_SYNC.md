@@ -1,4 +1,4 @@
-<!-- agent-sync:generated source=fabric-vr@92ebf55 cfg=225482ce4f10 at=2026-10-01T04:02:51Z — regenerate with `agent_sync.py setup`, do not hand-edit -->
+<!-- agent-sync:generated source=fabric-vr@bede4c0 cfg=bc8d7fba7575 at=2026-10-01T15:52:10Z — regenerate with `agent_sync.py setup`, do not hand-edit -->
 
 # How documentation and coordination work in fabric-vr
 
@@ -38,6 +38,8 @@ Ids are allocated by compare-and-swap on refs/agent-sync/ids/* at 'origin'.
 - `docs/OPEN_QUESTIONS.md`
 - `docs/evidence/backlog.md`
 - `docs/evidence/verification.md`
+- `docs/backlog-sources.json`
+- `docs/backlog.md`
 
 ### Gates run before a change is considered done
 
