@@ -55,7 +55,7 @@ worse than saying nothing.
 - [Staleness — a row is true about the tree it OBSERVED](#staleness--a-row-is-true-about-the-tree-it-observed)
 - [Environment — a proof is only valid where it ran](#environment--a-proof-is-only-valid-where-it-ran)
 - the ledger itself — one row per REQ, appended by stage 8
-- [What `Human` means, and what it does not](#what-human-means-and-what-it-does-not)
+- [`never` is a fact, not a failure](#never-is-a-fact-not-a-failure) — what `Human` means, and what it does not
 
 ## Staleness — a row is true about the tree it OBSERVED
 
