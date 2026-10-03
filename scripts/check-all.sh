@@ -71,6 +71,7 @@ verdict_floor() {
     check-docs)        echo 28 ;;
     check-strings)     echo 4 ;;
     check-installer)   echo 4 ;;
+    check-build-cache) echo 6 ;;
     check-native)      echo 1 ;;
     check-shell)       echo 1 ;;
     *)                 echo 0 ;;
@@ -120,6 +121,10 @@ gate scripts/check-strings.sh
 # it must ASSERT the version it just installed rather than report it (`H-31`). Runs the real
 # script against a fake `adb`, with a canary that proves a correct install still succeeds.
 gate scripts/check-installer.sh
+# LC-15: the command `AGENTS.md` names for bringing build output back under its cap is run against
+# a throwaway repository — it prunes over the cap, keeps sources, refuses a directory git does not
+# ignore — and the APK/AAB names are asserted fixed, which is what keeps releases at one per variant.
+gate scripts/check-build-cache.sh
 # **One file, `-fsyntax-only`, ~1.4 s.** The full native build is deliberately not here — it pulls
 # the NDK and a whole arm64 compile of whisper.cpp — and the consequence was that NOTHING compiled
 # the JNI bridge before a push: CI's cheap job has no NDK by design, so a syntax error in it

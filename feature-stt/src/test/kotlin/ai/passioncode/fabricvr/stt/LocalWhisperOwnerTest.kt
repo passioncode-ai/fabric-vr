@@ -4,13 +4,17 @@ import ai.passioncode.fabricvr.notes.SttSource
 import ai.passioncode.fabricvr.notes.Transcript
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
@@ -29,6 +33,7 @@ import org.junit.Test
  * These tests need no native library and no device: [LocalWhisperOwner] takes its engine factory as
  * a parameter precisely so the constraint it enforces can be tested rather than argued about.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class LocalWhisperOwnerTest {
 
     /**
@@ -206,5 +211,92 @@ class LocalWhisperOwnerTest {
 
         o.use(WhisperModel.MEDIUM, onWait = { waits += it }) { }
         assertEquals("a model switch is the wait this message exists for", listOf(WhisperModel.MEDIUM), waits)
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // LC-08 / audit F1 (2026-10-03 lifecycle audit): the context needs a release trigger that is
+    // not "the person changed the model". Without one, the first dictation pinned 190–574 MB of
+    // native memory for the rest of the process on an 8 GB headset that shares it with the
+    // streamed desktop. The test scheduler is the fake clock: `delay` inside the owner advances
+    // only when the test says so.
+    // -----------------------------------------------------------------------------------------
+
+    private fun idleOwner(fakes: Fakes, scope: CoroutineScope, block: (suspend () -> Unit)? = null) =
+        LocalWhisperOwner(
+            storeFor = ::store,
+            newEngine = { fakes.engine(it, block) },
+            idleScope = scope,
+            idleReleaseMs = IDLE_MS,
+        )
+
+    @Test fun `an idle context is freed after the timeout and the next dictation reloads it`() = runTest {
+        val fakes = Fakes()
+        val o = idleOwner(fakes, backgroundScope)
+
+        o.use(WhisperModel.SMALL) { }
+        advanceTimeBy(IDLE_MS - 1); runCurrent()
+        assertEquals("freed before the idle timeout had passed", 1, fakes.open.get())
+
+        advanceTimeBy(1); runCurrent()
+        assertEquals("the idle context was never given back", 0, fakes.open.get())
+
+        o.use(WhisperModel.SMALL) { }
+        assertEquals("the next dictation did not reload the model it needed", 2, fakes.built.get())
+        assertEquals(1, fakes.open.get())
+    }
+
+    @Test fun `every use restarts the idle clock`() = runTest {
+        val fakes = Fakes()
+        val o = idleOwner(fakes, backgroundScope)
+
+        o.use(WhisperModel.SMALL) { }
+        advanceTimeBy(IDLE_MS / 2); runCurrent()
+        o.use(WhisperModel.SMALL) { }
+        advanceTimeBy(IDLE_MS / 2 + 1); runCurrent()
+        assertEquals("a dictation half a timeout ago was treated as idle", 1, fakes.open.get())
+        assertEquals("the second dictation paid a reload it did not need", 1, fakes.built.get())
+
+        advanceTimeBy(IDLE_MS / 2); runCurrent()
+        assertEquals(0, fakes.open.get())
+    }
+
+    /**
+     * A thirteen-minute decode is longer than any idle timeout. The release must wait for it — a
+     * free under a running `whisper_full` is the use-after-free `I-25` names — and the clock
+     * starts when it ends, not when it started.
+     */
+    @Test fun `a decode longer than the timeout is never freed under it`() = runTest {
+        val fakes = Fakes()
+        val o = idleOwner(fakes, backgroundScope) { delay(3 * IDLE_MS) }
+
+        o.use(WhisperModel.SMALL) { }                     // t=0: a short use arms the clock for IDLE
+        advanceTimeBy(IDLE_MS - 1); runCurrent()
+        val decode = launch { o.use(WhisperModel.SMALL) { it.transcribe(ShortArray(0), 16_000, null) } }
+        runCurrent()                                       // t=IDLE-1: a long decode is inside
+        advanceTimeBy(2); runCurrent()                     // t=IDLE+1: the first clock has run out
+        assertEquals("the context was freed under a running decode", 1, fakes.open.get())
+
+        advanceTimeBy(3 * IDLE_MS); runCurrent()           // the decode ended at 4*IDLE-1
+        assertTrue(decode.isCompleted)
+        assertEquals("the clock ran during the decode instead of after it", 1, fakes.open.get())
+        advanceTimeBy(IDLE_MS - 2); runCurrent()           // t=5*IDLE-1: a whole timeout after it
+        assertEquals(0, fakes.open.get())
+        assertEquals("the context was rebuilt between two back-to-back uses", 1, fakes.built.get())
+    }
+
+    @Test fun `an idle release followed by an explicit release frees exactly once`() = runTest {
+        val fakes = Fakes()
+        val o = idleOwner(fakes, backgroundScope)
+        var engine: FakeEngine? = null
+        o.use(WhisperModel.SMALL) { engine = it as FakeEngine }
+
+        advanceTimeBy(IDLE_MS); runCurrent()
+        o.release()
+
+        assertEquals("the free ran twice, which on a real context is a use-after-free", 1, engine!!.closes)
+    }
+
+    private companion object {
+        const val IDLE_MS = 60_000L
     }
 }

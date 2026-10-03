@@ -47,6 +47,20 @@ The two surfaces and everything that wires the modules together. Shape decided i
   rename could reach the disk before the bytes it commits, in the one class whose whole purpose is
   surviving a hard stop. `flush` is an injected seam, because an `fsync` cannot be observed from a
   JVM test while the order it sits in can.
+- **`TranscriptionJournal`** — where a recording waits for its words (`DEC-0103`, lifecycle contract
+  LC-03, audit F2 of 2026-10-03). One small file per recording under `filesDir/outbox/awaiting`,
+  written atomically after the WAV and **before** the decode; `VoiceViewModel` ends it in a
+  `finally` on every outcome the person sees. So an entry outlives its decode only when the process
+  died mid-decode — the freezer and the low-memory killer, with no foreground service behind it —
+  and `Graph.init` reads it before the sweep, spares its recording, and runs
+  `resumeAwaitingTranscriptions`: words go to the outbox with the original recording, a failure or
+  a third attempt becomes a note without a transcript, a missing WAV is dropped. Attempts are
+  counted on disk before each resume, so a recording that crashes the decoder cannot crash every
+  launch. Making the decode outlive the process instead (WorkManager or a foreground service) is
+  `B-264`; telling the person on screen that a recovered dictation is being decoded is `B-265`.
+- **`MemoryTrim`** — `FabricVrApp.onTrimMemory` at `RUNNING_LOW` or above releases the whisper
+  context through `LocalWhisperOwner.release()`, which waits for a decode in flight (`DEC-0102`).
+  The owner's own five-minute idle clock is the other trigger; there was no `onTrimMemory` at all.
   **`claim` erases the entry it was given, and not whatever is on disk.** It compare-and-set
   `_pending` to null and then deleted the file outright, so an `offer` landing in that window —
   the next dictation, from the surface just freed — had its file deleted while memory kept the
@@ -113,6 +127,10 @@ What replaces it, in order:
 4. `onCleared` deletes the recording only when nothing is owed: not while `Ready`, not while the
    outbox owns the path, and not while a decode is still reading it. The third was the case the
    audit found.
+4a. **The process can die during step 1** — a ten-minute dictation decodes for about thirteen
+   minutes, and nothing keeps a process with no visible activity alive. `TranscriptionJournal`
+   holds the recording from before the decode until its outcome, and the next launch resumes it
+   (`DEC-0103`).
 5. `BackHandler(enabled = recording)` on Today and in the editor, so Back cannot pop a screen
    with the microphone open. It does **not** stop the recording — a Back that silently ended a
    dictation is the same surprise wearing a different hat.
@@ -127,7 +145,8 @@ a smaller harm than losing the words, and the person can see the note.
 carries the text, language, source, engine and duration; an `AppError` is a tree of throwables
 with no serialised form, and the fact that matters — that the words came from the headset after
 the chosen provider refused — is already in `Transcript.source`. `Graph.init` restores the entry
-before the scratch sweep runs and passes its path to `sweepScratchAudio(spare = …)`.
+before the scratch sweep runs and passes its path to `sweepScratchAudio(spare = …)` — together
+with every recording `TranscriptionJournal` names, which it then resumes (`DEC-0103`).
 
 **`DEC-0034` is technically wrong as written and this change is what corrects it.** It says
 leaving the Space is safe "because it transcribes rather than discards" — true of the call,
@@ -616,14 +635,27 @@ recording without one, because there is nothing to acknowledge, and the focus st
 back or the person's music stays ducked until the next dictation. It is idempotent, so a stop
 after a cancel does not abandon twice.
 
-**What is wired and what is not.** `ImmersiveActivity` attaches `AndroidAudioFocus` in
-`onSceneReady` (from the **application** context, and never detached — the focus belongs to the
-process, because a dictation started in the Space can finish after it has closed) and calls
-`releaseAudio()` in `onDestroy`. The remaining three wires belong to files this change does not
-own and are listed in the handoff: the panel host doing the same two things, `AudioPlayback`
-attaching itself as a `Playback`, and `VoiceViewModel.cancel()` calling `captureEnded()`. Until
-that last one lands, a **cancelled** gesture leaves the focus held until the next stop — visible
-as other apps staying ducked, and strictly better than the nothing that was there before.
+**What is wired, since the 2026-10-03 lifecycle audit closed the three wires this paragraph used
+to list as owed** (LC-02; findings F3, F4, F5):
+
+- **The focus is attached once, by `Graph.init`** (`attachProcessAudioFocus`, from the
+  application context, never detached). `ImmersiveActivity.onSceneReady` used to attach it alone,
+  so a dictation on the panel ducked nothing until the Space had been opened once in that process
+  and ducked everything after (`ProcessAudioFocusTest`, through Robolectric's `AudioManager`).
+- **Every recording gives the focus back in a `finally`**, not on the happy-path cue: a recorder
+  that fails at start or mid-recording, a discard, and a view model cleared mid-recording all left
+  other apps ducked, because only `RECORD_STOP`/`AUTO_STOP` released it. The release is skipped
+  when a newer recording has already taken the focus. Found beside it: the mute watcher, a child
+  of the recording job collecting a `StateFlow` that never completes, kept a failed recording's
+  job alive for ever, and `beginRecording` refuses while it is — the next press of *Record* did
+  nothing. It is cancelled in the same `finally` (`RecordingAudioFocusTest`, six cases).
+- **`AudioPlayback` is a `Playback`, bound by `PlaybackBinding`** in `rememberAudioPlayback`: it
+  is attached to the seam, so `RECORD_START` stops it, and it observes its screen's lifecycle, so
+  `ON_STOP` stops it — the panel hidden or the headset off. Detaching is identity-guarded, so an
+  older surface's teardown cannot detach a newer player (`PlaybackBindingTest`). `MediaPlayer.prepare()`
+  still runs synchronously on Main; `prepareAsync` is `B-270`.
+
+`releaseAudio()` is still called from `ImmersiveActivity.onDestroy`.
 
 **Nothing here has been heard or felt on a headset** (`B-183`): the tests prove which cue fires,
 in what order, and what the seam asked the platform for — which is what a JVM can prove.
@@ -990,7 +1022,7 @@ out at `0.19375`, and the first version of that assertion reported a correct 24 
 
 ## Checks
 
-**342 JVM tests in `:app`**, counted from the tree rather than remembered — an earlier version of
+**373 JVM tests in `:app`**, counted from the tree rather than remembered — an earlier version of
 this paragraph said sixteen where `VoiceViewModelTest` had twenty, which is the shape
 `evidence-docs` exists to refuse. `scripts/check-docs.sh` recomputes this number and fails on a
 stale one (`DEC-0053` §17, watched failing twice — against a drifted number, and against the claim

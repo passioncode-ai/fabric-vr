@@ -100,7 +100,7 @@ column is a finding, not a blank.
 manufactured by a pipeline whose `grep` exited 0 — which is how a run with three failed tests
 was once pushed (`SI-03`).
 
-The table below is **the list, in execution order** — sixteen of them. It listed four until
+The table below is **the list, in execution order** — seventeen of them. It listed four until
 `T-045` (`DEC-0053`), and the doc map's gate table is the one place an agent looks for *what must pass*:
 
 | # | Gate | Command | When | Blocking? |
@@ -114,6 +114,7 @@ The table below is **the list, in execution order** — sixteen of them. It list
 | 7 | Documentation | `bash scripts/check-docs.sh` | before the commit | yes |
 | 8 | Strings — duplicates, exemptions, library modules (`DEC-0045`) | `bash scripts/check-strings.sh` | before the commit | yes |
 | 9 | Installer (`DEC-0048`; closes `H-30`, `H-31`) | `bash scripts/check-installer.sh` | before the commit | yes — it runs the real script against a fake `adb`, and its third case is the canary: without one proving a *correct* install still succeeds, a script that exited non-zero for any reason would pass the other two |
+| 9a | Build-output prune (LC-15 of the organization's lifecycle contract) | `bash scripts/check-build-cache.sh` | before the commit | yes — runs the real `scripts/build-cache.sh` against a throwaway repository carrying this `.gitignore`: it prunes over the cap, keeps sources, refuses by name a directory git does not ignore (the canary), and asserts the APK/AAB names are fixed per variant, which is what keeps releases at one per variant |
 | 10 | Native bridge compiles (`DEC-0061`), and is linked for 16 KB pages (`B-104`) | `bash scripts/check-native.sh` | before the commit | yes — one file, `-fsyntax-only`, ~1.4 s; reports and passes where there is no NDK. The page-size flag is a configuration check and runs even without one |
 | 11 | Every shell script parses (`DEC-0062`) | `bash scripts/check-shell.sh` | before the commit | yes — `bash -n`, milliseconds; it exists because an apostrophe inside a single-quoted `awk` program closed the string **three separate times in one session** |
 | 12 | **The gates' own negative tests** (`DEC-0056`) | `bash scripts/selftest.sh` | before the commit | yes. **The script prints its own split** — planted defects and controls — because three documents restated it and all three were wrong, three different ways (`DEC-0062`). A case that stops failing is a check that has stopped working. **~3:45**, most of the suite's runtime, and the price of the claim |
@@ -122,7 +123,7 @@ The table below is **the list, in execution order** — sixteen of them. It list
 | 15 | Strings — unreferenced, `:app` only | `lint { error += "UnusedResources" }` | CI's release job — it needs the NDK | yes, in CI |
 | 16 | Dependency verification | automatic, from `gradle/verification-metadata.xml` | every resolution | yes — and a **cold** re-resolve nightly in CI (`DEC-0050`) |
 
-**Gate 12 is the one that keeps the other fifteen honest.** Five sections of the documentation
+**Gate 12 is the one that keeps the other sixteen honest.** Five sections of the documentation
 gate were written with "watched failing against a planted defect" in their own headers, and a
 blind verification found five of the six evadable — the claim was true when written and nothing
 kept it true. `scripts/selftest.sh` plants each defect and asserts the refusal, in the repository
