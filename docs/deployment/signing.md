@@ -2,21 +2,31 @@
 
 > **No secret value appears in this file, and none may be added to it.** What is recorded here is
 > a *location*, a *custodian* and a *fingerprint*. A fingerprint is public information; a password
-> is not, and it lives in the maintainer's local credential store under a name (`DEC-0049`).
+> is not, and it lives in a credential store under a name (`DEC-0049`, `DEC-0104`).
 
-## The state, as of 2026-09-21 — read this first
+## The state, as of 2026-10-03 — read this first
 
-**No release keystore exists yet, on this machine or anywhere else**, and `keystore.properties` is
-absent. That is why this document was written *now*: nothing is lost, and the default outcome of
-doing nothing is a `.keystore` on one laptop with no backup.
+**The release keystore exists, and only CI signs with it** (`DEC-0104`). It was created by
+the organization's release-signing tooling (`scripts/new-android-keystore.sh` in
+[passioncode-ai/.github](https://github.com/passioncode-ai/.github/blob/main/release-signing/README.md)),
+not on a development machine, and it has three homes and no fourth:
 
-Every gate that protects the key is already in place and has been watched refusing a planted
-violation — `.gitignore` and `scripts/check-secrets.sh` §2b — so the file cannot be committed by
-accident before the procedure below is followed.
+1. the Project Observatory vault, slot **`fabric-vr/prod`**, under the names `ANDROID_KEYSTORE_B64`,
+   `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` — the original;
+2. the vault's **encrypted off-disk backup** — the second copy;
+3. this repository's protected GitHub environment **`release`**, as secrets of the same four names —
+   the copy CI signs with. The environment's reviewers are the team `release-approvers`, the person
+   who pushed the tag cannot approve, administrators cannot bypass it, and only `v*` tags may deploy
+   to it.
 
-**`T-037` must not start until the *Human steps* section is done.** It is the task that installs a
-release build over a debug one, and it is the point of no return: from the first signed install,
-losing the key costs every headset its data.
+**Nobody's laptop holds it, and a build signed anywhere else is never published.** Headset testing
+stays **debug-signed**: `./gradlew :app:assembleDebug` and `scripts/install-on-quest.sh`, exactly
+as before. How a release is cut is [*Building a release*](#building-a-release) below.
+
+**`T-037` has still not run.** Both headsets carry debug-signed builds, and a release-signed APK
+is a different app to them. **Do not install a CI-signed APK over a debug install**: Android refuses
+it, and the only way past is the uninstall that deletes everything (next section). `T-037` owns the
+migration, and it now has a real key to migrate to.
 
 ## What happens if the key is lost
 
@@ -35,15 +45,21 @@ no recovery path, which is the whole reason this document exists.
 
 | | |
 |---|---|
-| **Location** | *not yet created* — an absolute path **outside** this repository, on the maintainer's machine. Recorded here once it exists. |
+| **Where it lives** | the vault slot `fabric-vr/prod`, its encrypted off-disk backup, and the `release` environment of `passioncode-ai/fabric-vr` — see *The state* above. Never a file in a checkout or on a development machine |
 | **Alias** | `fabricvr` |
-| **Type / algorithm** | PKCS12, RSA 4096, `SHA256withRSA` |
-| **Validity** | ≥ 10 000 days (~27 years). A key that expires is a key that ends the app. |
-| **Certificate SHA-256** | *not yet created* — filled from `keytool -list -v … \| grep SHA256` |
-| **Custodian** | the maintainer, single custodian. One custodian and two copies is the right shape for a two-person project; a second custodian with no second person who can reach the backup is a name in a document. |
+| **Type / algorithm** | PKCS12, RSA 4096, one password for the store and the key |
+| **Validity** | until **2056-09-25** (30 years). A key that expires is a key that ends the app |
+| **Certificate SHA-256** | `06:69:C0:CF:49:07:E4:11:41:AC:5C:4B:F8:2A:25:CE:75:C9:1E:33:BF:B0:D7:FC:A0:55:40:E3:94:C6:D5:41` |
+| **Custodian** | the organization's release signing (`passioncode-ai/.github` → `release-signing/README.md`, *Keys and their homes*). Rotating or restoring it follows that document, and the vault records every rotation (`vault.py rotate`) |
 
-**`keystore.properties` holds `storeFile` and `keyAlias` only.** The two passwords come from the
-environment — see *Building a release*.
+**The fingerprint above is enforced, not only recorded.** `scripts/verify-release-apk.sh` refuses
+any APK whose signer is not this certificate, and `scripts/check-release-apk.sh` (a gate in
+`check-all.sh`) fails if the script and this table ever disagree.
+
+**`keystore.properties` holds `storeFile` and `keyAlias` only**, on the runner as on any machine.
+The two passwords come from `FABRICVR_KEYSTORE_PASSWORD` / `FABRICVR_KEY_PASSWORD` in the
+environment (`DEC-0049`); CI fills those from the `release` environment's `ANDROID_KEYSTORE_PASSWORD`
+and `ANDROID_KEY_PASSWORD`.
 
 ## The debug keystore, which matters until T-037 has run everywhere
 
@@ -77,100 +93,101 @@ alongside the release keystore until `T-037` has completed on every headset.
 
 ## Backup
 
-Two copies, **at least one not on this laptop** — the minimum that survives the failure this
-protects against: the laptop dying, being reset, or being tidied.
+Two copies, **at least one off any one machine** — the minimum that survives the failure this
+protects against: a machine dying, being reset, or being tidied. The `release` environment's copy
+is a third, but it cannot be read back out of GitHub, so it is not a backup.
 
 Three artefacts, and any one of them alone is useless:
 
-| Artefact | Why |
+| Artefact | Where |
 |---|---|
-| the `.keystore` file | the key |
-| the store password, the key password, the alias | the key without them is a file |
-| `release-lineage.bin` (`T-037`) | without it a rotated build cannot prove its descent from the debug key, and every headset needs an uninstall again |
+| the keystore (`ANDROID_KEYSTORE_B64`, the PKCS12 file in base64) | vault slot `fabric-vr/prod` + its encrypted off-disk backup |
+| the password and the alias (`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`) | the same slot, the same backup |
+| `release-lineage.bin` (`T-037`) | does not exist yet. Without it a rotated build cannot prove its descent from the debug key, and every headset needs an uninstall again. When `T-037` creates it, it goes into the same slot |
 
-The passwords go into the maintainer's local credential store, which is backed up daily on its
-own schedule, independently of this repository and of any one tool that reads it. The
-`.keystore` and the lineage are binary files, not vault values: they
-go wherever the maintainer keeps things that must survive the laptop, and this table says **where
-without saying what is inside**.
+The debug keystore (`~/.android/debug.keystore`, section above) is **not** in the vault: until
+`T-037` has run on every headset it is as irreplaceable as the release key, and backing it up is
+still the maintainer's.
 
 | Copy | Where | Last verified |
 |---|---|---|
-| 1 | *not yet created* | — |
-| 2 (off this laptop) | *not yet created* | — |
+| 1 | Observatory vault, slot `fabric-vr/prod` — four names present (`observatory_credentials fabric-vr`, 2026-10-03) | the certificate SHA-256 above is the one recorded with the key in the organization's *Keys and their homes*; the first CI build verifies it again from the signed APK |
+| 2 (off-disk) | the vault's encrypted off-disk backup | not re-read by this change |
 
 *A copy that has never been restored from is a copy nobody has tested. "Last verified" means
-somebody opened it with `keytool -list` and saw the right fingerprint, not that it exists.*
+somebody opened it and saw the right fingerprint, not that it exists.*
 
 ## Building a release
 
-The passwords are **named**, never typed into a file:
+**Only CI builds a release** — `.github/workflows/release.yml`, in the `release` environment:
+
+1. Merge the release commit to `main` through the gates, with its `CHANGELOG.md` section
+   `## X.Y.Z` (the version is `versionName` in `app/build.gradle.kts`, without the `+<sha>`).
+2. Push an annotated tag: `git tag -a vX.Y.Z <commit> -m "Fabric VR X.Y.Z" && git push origin vX.Y.Z`.
+3. The `android` job waits for the `release` environment. Someone from `release-approvers` other
+   than the tag's author approves it ("Review deployments").
+4. The job decodes the keystore into `$RUNNER_TEMP`, writes a `keystore.properties` with the path
+   and alias only, runs `./gradlew :app:assembleRelease` with the passwords in the environment, and
+   runs `scripts/verify-release-apk.sh` on the APK: APK Signature Scheme v2 or v3, exactly one
+   signer, **this certificate's SHA-256**, a release manifest (not debuggable, `targetSdkVersion`
+   34, `minSdkVersion` 29–34, arm64 only) and a `versionName` that is the tag's version. Any
+   failure stops the release. It uploads `fabric-vr-X.Y.Z.apk` as `release-android`.
+5. `publish` (the organization's `release-publish.yml@v1`, a second approval because it holds the
+   GPG key) attests the APK with Sigstore, writes `SHA256SUMS` and `SHA256SUMS.asc`, and publishes
+   the GitHub release with the CHANGELOG section as its notes. A published release is never
+   rewritten: a fix is a new tag.
+
+**A rehearsal** runs the whole path and publishes nothing: push `vX.Y.Z-rc.N` (the tag push trigger
+ignores `-rc` tags), then
 
 ```bash
-<secret-runner> run fabric-vr \
-  FABRICVR_KEYSTORE_PASSWORD,FABRICVR_KEY_PASSWORD -- ./gradlew :app:assembleRelease
+gh workflow run release.yml --ref vX.Y.Z-rc.N -f publish=false
 ```
 
-The secret runner resolves each name, places it in the child's environment, and removes it from
-everything the child prints — so a Gradle stack trace quoting a signing error cannot carry the
-value into a transcript. The argument form above was checked against the runner's `--help` on
-2026-09-21: one comma-separated list, then `--`, then the command.
+The signed set is kept as a workflow artifact for 14 days.
 
-The build reads `keystore.properties` first and the environment second, so a file with the
-passwords in it still works. It is simply not the documented path.
-
-**Verify what was produced against this document:**
+**Verify a downloaded release** by hand the same way:
 
 ```bash
-apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk | grep SHA-256
+bash scripts/verify-release-apk.sh fabric-vr-X.Y.Z.apk X.Y.Z
+gh attestation verify fabric-vr-X.Y.Z.apk -R passioncode-ai/fabric-vr
 ```
 
-That is the only place the record and the artefact are compared. If they disagree, the record is
-wrong or the build signed with something else; either way stop.
+### What Meta requires, and what is checked
+
+Read from developers.meta.com on 2026-10-03; re-read before any store submission.
+
+| Requirement | Source | This APK |
+|---|---|---|
+| Signed with **APK Signature Scheme v2**; v1-only apps are not supported on Quest; later versions must use the same certificate | `VRC.Quest.Packaging.2` (required for immersive apps, recommended for panel apps) | v2 or v3 verified by `verify-release-apk.sh`, which refuses a v1-only signature. Android itself requires v2+ for an app targeting API 30 or above |
+| `targetSdkVersion` 32–34 (immersive) / 32–36 (2D); **an app created since 2026-03-01 must target 34** | *AndroidManifest.xml Requirements for Meta Quest Release* (updated 2026-09-30) | 34 (`app/build.gradle.kts`), checked on the built APK |
+| `minSdkVersion` 29–34, or 32 for in-lifecycle devices only | the same page | 34, checked to lie in 29–34 |
+| `compileSdkVersion` ≥ `targetSdkVersion` | the same page | 35 |
+| `android:debuggable` false or unset | the same page | checked on the built APK |
+| 64-bit only | `VRC.Quest.Packaging.6` | `abiFilters += "arm64-v8a"`, checked on the built APK |
+
+**This is not store readiness.** No Horizon Store listing exists; the store's review covers
+performance, input, functional behaviour and assets, and passing an APK check answers none of it.
+What the checks above establish is that a published APK is the real key's, sideloadable on a Quest
+3 or 3S, and does not fail the store's packaging rows on the points listed.
+
+### A locally signed build is a debug build
+
+`app/build.gradle.kts` still signs from a `keystore.properties` wherever one exists, because that is
+how CI's build reads it. A build signed that way anywhere but the `release` environment — a laptop,
+a fork, a dispatch on a branch — is a **debug build** in the organization's sense, whatever its
+variant: it is never published and never attached to a release. The release key is not handed to a
+development machine for it. For a headset, build debug.
 
 **With no `keystore.properties` the release build still runs** and produces an **unsigned** APK,
-with a lifecycle message saying so. That is deliberate: an absent keystore must be a clear message,
-not a broken build.
-
-## Human steps — these need a person, and they are all in one place
-
-Everything above that says *not yet created* is waiting on these. They need a human because a
-password chosen, typed or generated inside an agent session has already left the vault: a session
-transcript outlives the key, and agent memory stores on a development machine have been measured
-holding credential values for exactly that reason.
-
-1. **Create the keystore**, at an absolute path outside this repository. Choose the two passwords
-   at the prompts; do not reuse anything.
-
-   ```bash
-   keytool -genkeypair -v \
-     -keystore "$HOME/<somewhere outside the repo>/fabric-vr-release.keystore" \
-     -alias fabricvr -keyalg RSA -keysize 4096 -validity 10000 -storetype PKCS12
-   ```
-
-2. **Put the two passwords in the vault, by stdin — not as arguments, which reach the shell
-   history.**
-
-   ```bash
-   <secret-store> put fabric-vr prod FABRICVR_KEYSTORE_PASSWORD
-   <secret-store> put fabric-vr prod FABRICVR_KEY_PASSWORD
-   ```
-
-3. **Copy `keystore.properties.sample` to `keystore.properties`** and fill in `storeFile` (the
-   absolute path from step 1) and `keyAlias`. Leave both password lines out.
-
-4. **Make the two backups**, at least one off this laptop, covering the `.keystore` **and**
-   `~/.android/debug.keystore`.
-
-5. **Tell the next session the fingerprint and the two locations** — the fingerprint is public and
-   may be said out loud; the passwords may not. The agent fills in the four *not yet created*
-   fields above and the backup table, and the record becomes true.
-
-Once step 5 has happened, `T-037` may start.
+with a lifecycle message saying so. That is deliberate — it is what ci.yml's nightly `release build`
+job does, to prove R8, the NDK and lint — and `verify-release-apk.sh` refuses such an APK.
 
 ## Related
 
 - `DEC-0049` — the decision this document implements
 - `docs/evidence/plans/2026-09-20-v2/T-037.md` — the signed-install migration that depends on it
+- `DEC-0104` — the release key is created by the organization and used only by CI
+- `.github/workflows/release.yml`, `scripts/verify-release-apk.sh`, `scripts/check-release-apk.sh`
 - `README.md` → *The wrapper, and a release build*
 - `scripts/check-secrets.sh` §2b — refuses tracked signing material, canary and all

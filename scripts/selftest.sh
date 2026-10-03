@@ -647,5 +647,30 @@ P" \
 case_fails "exposure refuses an unknown argument" "NOPLANT" \
   "bash scripts/exposure.sh --deatil" "unknown argument"
 
+# ---- the release verifier (`DEC-0104`): the fingerprint has one home, the canary is live, and a
+# keystore secret never reaches a command line. `check-release-apk.sh` carries its own planted APKs;
+# these cases plant into the TREE the three things that gate reads from it.
+REL='bash scripts/check-release-apk.sh'
+
+case_passes "control — the release verifier passes a clean tree" "$REL"
+
+case_fails "release the published fingerprint drifts from the one the verifier enforces" \
+  "perl -pi -e 's/06:69:C0:CF:49:07/06:69:C0:CF:49:08/' docs/deployment/signing.md" \
+  "$REL" "disagree"
+
+case_fails "release the verifier enforces another certificate, so a correct APK is refused" \
+  "perl -pi -e 's/^RELEASE_CERT_SHA256=0669c0cf/RELEASE_CERT_SHA256=0669c0ce/' scripts/verify-release-apk.sh" \
+  "$REL" "refuses a correct release APK"
+
+case_fails "release a keystore password reaches Gradle as a -P argument" \
+  "python3 - <<'P'
+import pathlib
+p = pathlib.Path('.github/workflows/release.yml'); t = p.read_text()
+old = 'run: ./gradlew --no-daemon :app:assembleRelease'
+assert old in t
+p.write_text(t.replace(old, old + ' -Pandroid.injected.signing.store.password=\${{ secrets.ANDROID_KEYSTORE_PASSWORD }}'))
+P" \
+  "$REL" "outside a plain env mapping"
+
 echo "selftest: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1
