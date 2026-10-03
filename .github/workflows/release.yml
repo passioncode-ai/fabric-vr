@@ -1,0 +1,154 @@
+# The release: the Quest APK built and signed with Fabric VR's release keystore, verified against
+# the certificate this repository publishes, then attested (Sigstore), summed, GPG-signed and
+# published by the organization's shared workflow. Signing happens ONLY here, in the protected
+# `release` environment: approved by release-approvers, never by whoever pushed the tag
+# (passioncode-ai/.github release-signing/README.md). A published release is never rewritten: a
+# fix is a new tag. The custody of the key, and what losing it costs: docs/deployment/signing.md.
+#
+# Release:    push an annotated vX.Y.Z tag on the reviewed release commit.
+# Rehearsal:  push vX.Y.Z-rc.N (the push trigger ignores it), then
+#             gh workflow run release.yml --ref vX.Y.Z-rc.N -f publish=false
+#             The signed set is kept as a workflow artifact for 14 days; no release is created.
+#
+# Not here, deliberately: the gates. They ran on the commit before it could be pushed (the
+# pre-push receipt, `scripts/check-all.sh`) and run again in ci.yml; this file builds what was
+# already checked. ci.yml's nightly `release build` job stays as it is — an UNSIGNED build that
+# needs no approval and proves R8, the NDK and lint every night.
+name: release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "false = rehearsal: build, sign, verify and attest, create no release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# One release per ref at a time, and never cancelled half-way: a cancelled publish leaves a draft.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  android:
+    name: build, sign and verify the APK
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 60
+    steps:
+      # The environment admits only v* tags, so a dispatch on a branch never reaches the secrets;
+      # this says so in words instead of a deployment-protection error.
+      - name: Refuse anything but a version tag
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          case "$REF" in
+            refs/tags/v[0-9]*) echo "releasing $REF" ;;
+            *) echo "::error::release.yml runs on a vX.Y.Z or vX.Y.Z-rc.N tag, not $REF"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive    # third_party/whisper.cpp, compiled into the APK
+          fetch-depth: 0           # versionName carries the short sha; check-docs history lookups
+          persist-credentials: false
+
+      # JDK 21: the JetBrains Runtime this project is developed on and the ceiling
+      # settings.gradle.kts enforces (17-21); ci.yml uses the same.
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # The runner image ships the SDK with its licences accepted; only the pinned NDK is missing.
+      # Why not android-actions/setup-android: ci.yml's release job, same step.
+      - name: Install the pinned NDK
+        env:
+          NDK_VERSION: '27.2.12479018'   # feature-stt/build.gradle.kts — keep the three in step
+        run: |
+          set -eu
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" || true
+          test -d "$ANDROID_HOME/ndk/$NDK_VERSION"
+
+      # No cache for a release: every dependency is resolved fresh and checked against
+      # gradle/verification-metadata.xml, so nothing a previous run left behind is shipped.
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-disabled: true
+
+      # A missing secret fails here, named, before anything is built. Values are only tested for
+      # emptiness, never printed. Note: GitHub masks every secret's value in the log, and the key
+      # alias is a secret, so the log shows the package as `ai.passioncode.***`.
+      - name: Check the keystore secrets are present
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in ANDROID_KEYSTORE_B64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then echo "::error::secret $name is not set in the release environment"; missing=1; fi
+          done
+          exit "$missing"
+
+      # The keystore goes to $RUNNER_TEMP, outside the checkout, readable by this user only.
+      # keystore.properties holds the path and the alias and NO password (DEC-0049): the build
+      # reads the passwords from FABRICVR_KEYSTORE_PASSWORD / FABRICVR_KEY_PASSWORD below.
+      # `printf` is a shell builtin, so no value reaches a process's argv.
+      - name: Decode the release keystore
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -eu
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/release.p12"
+          test -s "$RUNNER_TEMP/release.p12"
+          printf 'storeFile=%s\nkeyAlias=%s\n' "$RUNNER_TEMP/release.p12" "$ANDROID_KEY_ALIAS" > keystore.properties
+
+      # Passwords as environment values, never `-P` (that is argv). The store and key passwords
+      # are the same for this PKCS12 keystore; both names are passed so the build need not know.
+      - name: Assemble the signed release
+        env:
+          FABRICVR_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FABRICVR_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon :app:assembleRelease
+
+      # v2/v3 signature, the published certificate SHA-256, a release manifest, and a versionName
+      # that is the tag's version. A non-zero exit here stops the release.
+      - name: Verify the APK against the published certificate
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          bash scripts/verify-release-apk.sh app/build/outputs/apk/release/app-release.apk "$TAG"
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/fabric-vr-${TAG#v}.apk"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-android
+          path: dist/*.apk
+          if-no-files-found: error
+
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.p12" keystore.properties
+
+  publish:
+    needs: [android]
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    uses: passioncode-ai/.github/.github/workflows/release-publish.yml@v1
+    with:
+      publish: ${{ github.event_name == 'push' || inputs.publish }}
+    secrets: inherit

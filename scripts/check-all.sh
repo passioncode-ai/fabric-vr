@@ -71,6 +71,7 @@ verdict_floor() {
     check-docs)        echo 28 ;;
     check-strings)     echo 4 ;;
     check-installer)   echo 4 ;;
+    check-release-apk) echo 16 ;;
     check-native)      echo 1 ;;
     check-shell)       echo 1 ;;
     *)                 echo 0 ;;
@@ -120,6 +121,12 @@ gate scripts/check-strings.sh
 # it must ASSERT the version it just installed rather than report it (`H-31`). Runs the real
 # script against a fake `adb`, with a canary that proves a correct install still succeeds.
 gate scripts/check-installer.sh
+# The release verifier must refuse every APK it exists to refuse (`DEC-0104`): another key, a
+# v1-only signature, a debug manifest, 32-bit code, a version that is not the tag's. It runs the
+# real `verify-release-apk.sh` against a fake `apksigner` and `aapt2`, with a canary, and fails if
+# the fingerprint it enforces drifts from `docs/deployment/signing.md` or `release.yml` puts a
+# keystore secret anywhere but an environment mapping. Milliseconds; no SDK needed.
+gate scripts/check-release-apk.sh
 # **One file, `-fsyntax-only`, ~1.4 s.** The full native build is deliberately not here — it pulls
 # the NDK and a whole arm64 compile of whisper.cpp — and the consequence was that NOTHING compiled
 # the JNI bridge before a push: CI's cheap job has no NDK by design, so a syntax error in it

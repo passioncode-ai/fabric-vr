@@ -163,11 +163,12 @@ android {
                 val declared = keystoreProperties.getProperty("storeFile")
                 storeFile = File(declared).takeIf { it.isAbsolute } ?: rootProject.file(declared)
                 // **The file first, the environment second.** A plain `keystore.properties` keeps
-                // working for whoever prefers it; the documented path is
-                // `use_secret.py run fabric-vr … -- ./gradlew :app:assembleRelease`, where the
-                // value is never typed, never pasted and never in a transcript. Two irreplaceable
-                // values in a plaintext file in the working directory is the file most likely to
-                // be opened, screenshotted or pasted while debugging a signing error.
+                // working for whoever prefers it; the path that ships is the release workflow
+                // (`.github/workflows/release.yml`, `DEC-0104`), which writes the path and alias
+                // here and puts the passwords in these two variables from the `release`
+                // environment, so a value is never typed, never pasted and never in argv. Two
+                // irreplaceable values in a plaintext file in the working directory is the file
+                // most likely to be opened, screenshotted or pasted while debugging a signing error.
                 storePassword = keystoreProperties.getProperty("storePassword")
                     ?: System.getenv("FABRICVR_KEYSTORE_PASSWORD")
                 keyAlias = keystoreProperties.getProperty("keyAlias")
@@ -186,7 +187,8 @@ android {
             if (signingConfig == null) {
                 logger.lifecycle(
                     "fabric-vr: no keystore.properties — :app:assembleRelease will produce an " +
-                        "UNSIGNED apk. Copy keystore.properties.sample and fill it to sign.",
+                        "UNSIGNED apk. Releases are signed only by CI's release workflow; " +
+                        "see docs/deployment/signing.md.",
                 )
             }
         }
