@@ -157,7 +157,7 @@ freed the whisper context. Measuring both is device-gate work.
   what an agent that built runs before ending its run; `clean` removes them regardless. It deletes
   only directories git ignores.
 - **Gradle's user home (`~/.gradle`)** is shared with every Gradle project on the machine, so the
-  script above does not touch it. A cold `testDebugUnitTest` here fills it to about 1.5 GB
+  script above does not touch it. A cold build and the full gate here fill it to 1.9 GB, 1.7 GB of it `caches/`
   (measured 2026-10-03). Cap: 4 GB; over it, `./gradlew --stop && rm -rf ~/.gradle/caches`, and
   the next build downloads again, verified against `gradle/verification-metadata.xml`.
 
