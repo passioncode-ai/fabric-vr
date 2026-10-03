@@ -5,6 +5,7 @@ import ai.passioncode.fabricvr.common.AppError
 import ai.passioncode.fabricvr.common.KeystoreSecureSettings
 import ai.passioncode.fabricvr.common.Log2
 import ai.passioncode.fabricvr.common.SecureSettings
+import ai.passioncode.fabricvr.common.runCatchingCancellable
 import ai.passioncode.fabricvr.notes.NotesRepository
 import ai.passioncode.fabricvr.notes.RoomNotesRepository
 import ai.passioncode.fabricvr.notes.db.NotesDatabase
@@ -21,6 +22,7 @@ import ai.passioncode.fabricvr.stt.FailingEngine
 import ai.passioncode.fabricvr.stt.SttRouter
 import ai.passioncode.fabricvr.stt.LocalWhisperOwner
 import ai.passioncode.fabricvr.stt.WhisperEngine
+import ai.passioncode.fabricvr.stt.WavWriter
 import ai.passioncode.fabricvr.vault.FileVault
 import ai.passioncode.fabricvr.vault.ReconcileSummary
 import ai.passioncode.fabricvr.vault.RemovalJournal
@@ -29,6 +31,8 @@ import ai.passioncode.fabricvr.vault.VaultImporter
 import ai.passioncode.fabricvr.vault.VaultMirror
 import ai.passioncode.fabricvr.vault.VaultReconciler
 import ai.passioncode.fabricvr.vault.VaultZipImporter
+import ai.passioncode.fabricvr.vault.adoptOrKeep
+import android.media.AudioManager
 import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -155,6 +159,15 @@ object Graph {
      */
     val dictationOutbox: DictationOutbox by lazy {
         DictationOutbox(File(File(appContext.filesDir, "outbox"), "dictation.tsv"))
+    }
+
+    /**
+     * Recordings whose decode has started and not ended (LC-03, audit F2, `DEC-0103`). Beside the
+     * outbox on purpose: the outbox holds words waiting for a note, this holds recordings waiting
+     * for words, and a launch reads both before the sweep decides what to delete.
+     */
+    val transcriptionJournal: TranscriptionJournal by lazy {
+        TranscriptionJournal(File(File(appContext.filesDir, "outbox"), "awaiting"))
     }
 
     /**
@@ -293,7 +306,14 @@ object Graph {
      * free it. See [LocalWhisperOwner] for why it is a class in `feature-stt` rather than three
      * lines here: the rule it enforces is whisper's, and the three lines were an ANR (`I-04`).
      */
-    val localWhisper: LocalWhisperOwner by lazy { LocalWhisperOwner(::modelStore) }
+    val localWhisper: LocalWhisperOwner by lazy { LocalWhisperOwner(::modelStore, idleScope = scope) }
+
+    /**
+     * The second release trigger for [localWhisper] (LC-08, audit F1, `DEC-0102`): memory pressure.
+     * The first is the owner's own idle clock; the third, a model change, is the eviction it always
+     * had. `FabricVrApp.onTrimMemory` is the only caller.
+     */
+    internal val memoryTrim: MemoryTrim by lazy { MemoryTrim(scope) { localWhisper.release() } }
 
     /**
      * Runs [block] against speech routing for the current settings, then takes the engine back.
@@ -429,6 +449,17 @@ object Graph {
     var carriedOverServer: Boolean = false
         private set
 
+    /**
+     * A recording becomes a note with no transcript — `NotesViewModel.keepRecordingOnly`'s write,
+     * for the resume, which runs with no screen behind it. The recording moves into the vault
+     * first, so the row is written once with its final path.
+     */
+    private suspend fun keepRecordingOnly(path: String): Result<Unit> = runCatchingCancellable {
+        val note = NotesRepository.newNote()
+        notes.upsert(note.copy(audioPath = vault.adoptOrKeep(note, path))).getOrThrow()
+        Unit
+    }
+
     fun init(context: Context) {
         appContext = context.applicationContext
         // **Before the mirror starts, and awaited by the first UI read.** The reconcile compares
@@ -480,15 +511,34 @@ object Graph {
         // the sweep's threshold in every realistic case, but "in every realistic case" is what
         // the threshold already says, and the one file this launch is about to turn into a note
         // must not depend on it twice.
+        //
+        // **And so is every recording whose decode a dead process left unfinished** (LC-03, audit
+        // F2, `DEC-0103`): the journal is read before the sweep, its recordings are spared, and
+        // then they are decoded — the words reach the outbox exactly as if the first process had
+        // lived. One coroutine, in this order, so the sweep can never run ahead of either read.
         scope.launch {
             dictationOutbox.restore()
             // Every waiting dictation's recording, not only the first's (`DEC-0095`): the ones
             // queued behind it are drained later and their scratch WAVs may already be a day old.
             sweepScratchAudio(
                 File(appContext.filesDir, "audio"),
-                spare = dictationOutbox.waitingAudio(),
+                spare = dictationOutbox.waitingAudio() + transcriptionJournal.audioPaths(),
+            )
+            resumeAwaitingTranscriptions(
+                journal = transcriptionJournal,
+                readPcm = { path -> withContext(io) { WavWriter.readPcm(File(path).readBytes()) } },
+                transcribe = { pcm, language -> withStt { it.transcribe(pcm, langHint = language) } },
+                deliver = { transcript, path -> dictationOutbox.offer(transcript, path) },
+                keepRecordingOnly = ::keepRecordingOnly,
             )
         }
+
+        // **Once, for the whole process** (LC-02/F4 of the 2026-10-03 lifecycle audit). Audio
+        // focus was attached only from `ImmersiveActivity.onSceneReady`, so a dictation on the
+        // panel ducked nothing until the Space had been opened once in that process, and ducked
+        // everything after. The focus holds the application context and answers for the process,
+        // which is why it belongs here rather than to whichever surface happened to open first.
+        attachProcessAudioFocus(feedbackCues, appContext.getSystemService(AudioManager::class.java))
 
         // `I-21`. `KeystoreSecureSettings.secretKey()` is `@Synchronized` and generates the key on
         // first use — asking StrongBox first, which most headsets lack, catching the failure and

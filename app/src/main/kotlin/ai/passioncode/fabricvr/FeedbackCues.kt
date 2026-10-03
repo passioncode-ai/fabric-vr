@@ -125,11 +125,12 @@ interface FeedbackCues {
     /**
      * Attaches the platform's audio focus, or detaches it with null (`B-226`).
      *
-     * **The same shape as [attachHaptics] and for the same reason:** `AudioManager` needs a
-     * `Context` and this seam is process-wide, so whichever surface is alive hands it over. Unlike
-     * the haptic channel there is nothing surface-specific about it — the application context
-     * answers for the whole process — so it is attached once and not detached on the way out: a
-     * dictation started in the Space and finished after it closed must still give the focus back.
+     * `AudioManager` needs a `Context` and this seam is constructed without one, so it is handed
+     * over. Unlike the haptic channel there is nothing surface-specific about it — the application
+     * context answers for the whole process — so it is attached **once, by `Graph.init`** through
+     * [attachProcessAudioFocus], and never detached: a dictation started in the Space and finished
+     * after it closed must still give the focus back. (It was attached by the Space alone until
+     * the 2026-10-03 lifecycle audit, F4, so the panel ducked nothing until the Space had opened.)
      *
      * **Default: nothing.** Until a host wires one, this is exactly the behaviour before `B-226`,
      * which is the honest default for a seam that cannot construct its own platform.
@@ -376,6 +377,24 @@ class ToneCueChannel(private val volume: Int = VOLUME) : CueChannel, AutoCloseab
         /** Long enough to be heard beside a streamed desktop, short enough not to be a noise. */
         const val DURATION_MS = 90
     }
+}
+
+/**
+ * Gives [cues] the platform's audio focus, once, for the whole process (LC-02/F4 of the 2026-10-03
+ * lifecycle audit). Called from `Graph.init`.
+ *
+ * It used to be attached from `ImmersiveActivity.onSceneReady` alone, so a dictation on the panel
+ * ducked nothing until the Space had been opened once in that process — and ducked everything
+ * after. The focus answers for the process, not for a surface, so one host-independent point owns
+ * it. A device that hands back no `AudioManager` leaves the seam at [AudioFocus.None]: recording
+ * is not focus-gated, and the person holding the trigger is still owed a recording.
+ */
+fun attachProcessAudioFocus(cues: FeedbackCues, manager: AudioManager?) {
+    if (manager == null) {
+        Log2.w("cue.focus.unavailable")
+        return
+    }
+    cues.attachAudioFocus(AndroidAudioFocus(manager))
 }
 
 /**

@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.AudioManager
 import android.view.KeyEvent
 import ai.passioncode.fabricvr.ui.FabricApp
 import ai.passioncode.fabricvr.common.theme.Tokens
@@ -254,19 +253,9 @@ class ImmersiveActivity : AppSystemActivity() {
         // gone reaches the audio channel alone rather than a dead activity.
         Graph.feedbackCues.attachHaptics(spaceHaptics)
 
-        // **`B-226`, and this is the surface Meta's guidance is literally about**: *"entering an
-        // immersive experience can cause background audio from other apps to stop"*. Nothing in
-        // this tree requested audio focus at all, so a dictation beside a streamed desktop or a
-        // call had no relationship with the mixer in either direction.
-        //
-        // The APPLICATION context, and not detached on the way out: the focus this holds belongs
-        // to the process, not to the scene, because a dictation started here can finish after the
-        // Space has closed and must still give it back. Attaching again is harmless — the seam
-        // keeps the last one — which is what lets the panel host do the same thing (see
-        // `docs/modules/app.md`).
-        Graph.feedbackCues.attachAudioFocus(
-            AndroidAudioFocus(applicationContext.getSystemService(AudioManager::class.java)),
-        )
+        // Audio focus (`B-226`) is NOT attached here any more: `Graph.init` attaches it once for
+        // the whole process (F4 of the 2026-10-03 lifecycle audit). Attached from this scene
+        // alone, a dictation on the panel ducked nothing until the Space had been opened once.
 
         // registerPanels() only says HOW to build the panel. Something has to create an entity that
         // carries it, or the Space opens onto an empty room — the SDK sample gets this from an

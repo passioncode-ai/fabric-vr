@@ -228,7 +228,7 @@ let them finish; the hook then costs milliseconds.
 Individually — **this list is a convenience, not the register.** `docs/DOCMAP.md` declares all
 every gate in execution order and is the single home for *what must pass* — the number lives
 there and is deliberately not restated here, because it has now moved twice; the eight below are
-the ones worth running by hand. The source counter reports **740 JVM tests**, and that number is checked rather
+the ones worth running by hand. The source counter reports **775 JVM tests**, and that number is checked rather
 than remembered (`check-docs.sh` §17, `DEC-0056`): a count stated in prose is a claim the gate
 recomputes, while a count inside the code block below would be an example by the same rule that
 lets a sample command carry a sample number. The scanner currently misses a fully qualified

@@ -34,6 +34,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -182,6 +183,13 @@ class VoiceViewModel(
      * rather than the only place the words live.
      */
     private val outbox: DictationOutbox = Graph.dictationOutbox,
+    /**
+     * Where a recording is written down as awaiting transcription before its decode starts
+     * (LC-03, audit F2, `DEC-0103`). The outbox above holds finished words; this holds the
+     * recording while it is still being turned into them, so a process killed mid-decode leaves
+     * something the next launch can resume. See [ai.passioncode.fabricvr.TranscriptionJournal].
+     */
+    private val journal: ai.passioncode.fabricvr.TranscriptionJournal = Graph.transcriptionJournal,
     /**
      * The scope a transcription runs on. **Not `viewModelScope`** (`REQ-046`, `H1`).
      *
@@ -472,6 +480,12 @@ class VoiceViewModel(
     private var recordJob: Job? = null
 
     /**
+     * How many recordings this view model has opened. Read and written on Main only — the start
+     * and the `finally` that ends it both run on `viewModelScope` — so a plain field suffices.
+     */
+    private var recordings = 0
+
+    /**
      * The recording. See [PcmBuffer]: it was a `mutableListOf<Short>` fed an `ArrayList<Short>`
      * per chunk, which is ten times the memory of the audio it holds and a lock held for an
      * `addAll` over up to 960 000 boxed references (`E-02`, `I-10`).
@@ -636,13 +650,27 @@ class VoiceViewModel(
             // or a missing model, and a cue that fires before the microphone is open tells the
             // person something started when nothing did — the same lie the visual states were
             // rewritten to stop telling.
+            val recording = ++recordings
             cues.play(Cue.RECORD_START)
+            // **Every way out of here gives the audio focus back** (LC-02, audit F3 of
+            // 2026-10-03). `RECORD_START` asked the mixer to duck everything else; only the
+            // `RECORD_STOP`/`AUTO_STOP` cues gave it back. A recorder that failed — the shell's
+            // voice command holding the microphone, `ERROR_DEAD_OBJECT` — a discard, or a host
+            // cleared mid-recording ended with no cue, and the person's streamed desktop or call
+            // stayed ducked until the next dictation or the process's death. `captureEnded` is
+            // idempotent, so the ordinary stop, which has already released, costs nothing here.
+            //
             // **`REQ-052` / `H11`: the OS can mute the stream without closing it.** Two
             // collectors rather than one because the two events are independent — the mute
             // arrives on its own flow and can arrive between two reads, and a read arrives
             // whether or not the mute has changed. Each writes the state from the *other's*
             // current value, so neither can win a frame and leave the screen lying.
-            launch {
+            //
+            // **The mute watcher ends with the recording.** It is a child of this job and
+            // `silenced` is a `StateFlow`, which never completes — so after a recorder failure the
+            // job stayed active for ever, and `beginRecording` refuses while it is: the next press
+            // of *Record* did nothing at all. Found beside F3; cancelled in the `finally` below.
+            val muteWatch = launch {
                 recorder.silenced.collect { muted ->
                     val current = _state.value
                     if (!current.isRecording) return@collect
@@ -657,15 +685,23 @@ class VoiceViewModel(
                     }
                 }
             }
-            recorder.record(::appendSamples)
-                .catch { failure -> _state.value = VoiceState.Failed(failure.toMessage()) }
-                .collect { level ->
-                    _state.value = if (recorder.silenced.value) {
-                        VoiceState.Silenced(level.rms, level.samples)
-                    } else {
-                        VoiceState.Recording(level.rms, level.samples)
+            try {
+                recorder.record(::appendSamples)
+                    .catch { failure -> _state.value = VoiceState.Failed(failure.toMessage()) }
+                    .collect { level ->
+                        _state.value = if (recorder.silenced.value) {
+                            VoiceState.Silenced(level.rms, level.samples)
+                        } else {
+                            VoiceState.Recording(level.rms, level.samples)
+                        }
                     }
-                }
+            } finally {
+                muteWatch.cancel()
+                // Only if no newer recording has taken the focus since: a stop cancels this job
+                // from the app scope, and a press arriving in that window must not have its own
+                // focus abandoned by the recording before it (whose stop cue already released).
+                if (recordings == recording) cues.captureEnded()
+            }
         }
     }
 
@@ -744,7 +780,26 @@ class VoiceViewModel(
                 lang = language()
                 path
             }
+            transcribeJournalled(pcm, lang, last.audioPath)
+        }
+    }
+
+    /**
+     * [transcribe], with the recording written down as awaiting transcription for exactly as long
+     * as the decode runs (LC-03, audit F2, `DEC-0103`).
+     *
+     * **Begun before the decode, ended in a `finally`.** Every outcome this process reaches — the
+     * words in the outbox, nothing heard, a failure the screen shows, *Stop transcribing* — ends
+     * the entry, so the only entry a later launch can find is one a killed process left, and that
+     * is the one it resumes. A WAV that could not be written has no entry: there is nothing on
+     * disk a later process could decode.
+     */
+    private suspend fun transcribeJournalled(pcm: ShortArray, lang: String, audioPath: String?) {
+        if (audioPath != null) withContext(io) { journal.begin(audioPath, lang) }
+        try {
             transcribe(pcm, lang)
+        } finally {
+            if (audioPath != null) withContext(NonCancellable + io) { journal.end(audioPath) }
         }
     }
 
@@ -765,7 +820,7 @@ class VoiceViewModel(
         // The retry is the same wait as the first attempt and is owed the same bar and the same
         // exit (`B-178`/`B-179`); it gets both for free, because [transcriptionProgress] keys on
         // the STATE rather than on this call.
-        transcriptionJob = appScope.launch { transcribe(pcm, withContext(io) { language() }) }
+        transcriptionJob = appScope.launch { transcribeJournalled(pcm, withContext(io) { language() }, last.audioPath) }
     }
 
     /**

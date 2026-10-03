@@ -83,6 +83,7 @@ class TranscriptionAbandonedTest {
         currentProvider = { SttProvider.LOCAL },
         audioDir = { File(root, "audio").apply { mkdirs() } },
         outbox = DictationOutbox(),
+        journal = ai.passioncode.fabricvr.TranscriptionJournal(null),
         appScope = appScope,
         io = dispatcher,
     )

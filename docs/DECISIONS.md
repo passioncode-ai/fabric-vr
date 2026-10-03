@@ -4,7 +4,7 @@
 scope, security, data, pricing or process. Doctrine:
 `references/documentation.md`.
 
-**Next free ID:** `DEC-0102`
+**Next free ID:** `DEC-0104`
 
 Reading *"Next free ID"* is **not** reserving it — a second agent reading it in the
 same minute gets the same answer. Reserve it, then write.
@@ -137,7 +137,8 @@ one, leave its body intact. Never renumber. Never delete.
 - **Status:** Accepted · **Partially superseded by DEC-0019** — the clause "a best-effort
   `onTerminate`" falls: nothing overrides `onTerminate` anywhere in the tree, and Android does not
   call it on a real device. `T-018` owns the remaining half, that `close()` still blocks the
-  **caller's** thread rather than only the engine's.
+  **caller's** thread rather than only the engine's. · **Partially superseded by DEC-0102** — "kept
+  for the process" falls: the context has named release triggers.
 - **Context:** whisper.cpp forbids concurrent access to one context, and Android gives no reliable
   process-teardown callback. The audit found `close()` freeing the native context off the engine's
   single-thread dispatcher — a use-after-free waiting for the first caller — while nothing ever
@@ -3332,3 +3333,67 @@ one, leave its body intact. Never renumber. Never delete.
   Verification row), `docs/handoff/2026-09-22-v3-entry.md`.
 - **Source:** operator, 2026-10-01 instruction to make the gate honestly green on a fresh clone
   after the public re-creation of 2026-09-30 · branch `agent/pre-publication-gate`
+
+### DEC-0102 — The whisper context is released on idle and on memory pressure, not kept for the process
+
+- **Date:** 2026-10-03
+- **Status:** Accepted
+- **Context:** `DEC-0007` kept the context "for the process" so a second dictation would not pay
+  the model load, and named a teardown callback as the way back; `DEC-0019` found that callback
+  did not exist. `LocalWhisperOwner.release()` had no production caller and the app had no
+  `onTrimMemory`, so the first on-device dictation pinned 190 MB (`small`) to 574 MB
+  (`large-turbo`) of native memory until the process died — on an 8 GB headset whose memory is
+  shared with the streamed desktop. The project's own audits listed it open (`docs/audit/2026-09-22-audit.md`
+  C10, proposal Q-09), and the organization's lifecycle audit of 2026-10-03 made it finding F1 under
+  rule LC-08: every heavy resource has a named owner and a release trigger, and "process lifetime"
+  is not one.
+- **Decision:**
+  - The context keeps one owner, `LocalWhisperOwner`, and gains two release triggers beside the
+    model-change eviction: **five minutes idle** (`IDLE_RELEASE_MS`), counted from the moment a use
+    *ends*; and **memory pressure** — `FabricVrApp.onTrimMemory` at `TRIM_MEMORY_RUNNING_LOW` or
+    above calls `release()` through `MemoryTrim`. `RUNNING_MODERATE` is not answered.
+  - Every trigger takes the owner's mutex, so none frees a context a decode is inside: a release
+    waits for the running decode. The idle clock also re-checks a use counter under the lock, so a
+    caller already queued keeps the context it is about to need.
+  - The cost is accepted: the next dictation after a release pays the model load again (about two
+    seconds for `small`), the same trade the eviction already makes.
+- **Consequences / affects:** `docs/modules/feature-stt.md`, `docs/modules/app.md`, `AGENTS.md`
+  (*Lifecycle*). Tests: `LocalWhisperOwnerTest` (idle release on a fake clock, reload, no release
+  under a decode), `MemoryTrimTest` (levels, release, reload, wait for a decode in flight). Five
+  minutes is a judgement, not a measurement; a headset session can move it.
+- **Source:** lifecycle audit 2026-10-03, finding F1 (fabric-workspace
+  `docs/reports/2026-10-03-lifecycle-audit/raw/fabric-vr.md`) · branch `claude/lifecycle-contract`
+
+### DEC-0103 — A recording is journalled before its decode, and the next launch resumes it
+
+- **Date:** 2026-10-03
+- **Status:** Accepted
+- **Context:** a ten-minute dictation decodes for about thirteen minutes (`DEC-0032`) on the
+  application scope, which survives the panel closing (`REQ-046`) but not the process. There is no
+  foreground service, no WorkManager and no wake lock, so with nothing visible Android's cached-app
+  freezer suspends the process and the low-memory killer may end it. `DictationOutbox` holds only
+  finished transcripts — `offer` follows the decode — so a kill mid-decode lost the words silently,
+  and the launch sweep deleted the WAV a day later. `T-020` rejected a foreground service for
+  *recording*, correctly, because the microphone must not be live off-screen; that reasoning does
+  not cover a decode. Lifecycle audit 2026-10-03, finding F2, rule LC-03: long work is journalled
+  before it starts and resumes after a kill.
+- **Decision:**
+  - `TranscriptionJournal` writes one file per recording under `filesDir/outbox/awaiting`,
+    atomically, after the WAV is on disk and **before** the decode. `VoiceViewModel` ends it in a
+    `finally` on every outcome this process reaches — words in the outbox, nothing heard, a failure,
+    *Stop transcribing* — so an entry outlives its decode only when the process died.
+  - `Graph.init` reads the journal before the scratch sweep, spares every recording it names, and
+    runs `resumeAwaitingTranscriptions`: words go to the outbox with the original recording (the
+    ordinary drain writes the note); a failure, or a recording past `MAX_RESUME_ATTEMPTS` (two),
+    becomes a note without a transcript, `SCN-004`'s promise; a missing WAV is dropped. The attempt
+    is counted on disk before each resume, so a recording that crashes the decoder cannot crash
+    every launch.
+  - **Not decided here:** making the decode or a model download outlive the process. WorkManager is
+    not a dependency (`DEC-0050` verification, `DEC-0073` notices) and a long-running worker needs a
+    foreground-service notification whose behaviour on Horizon OS needs a headset. That is `B-264`;
+    saying on screen that a recovered dictation is being decoded is `B-265`.
+- **Consequences / affects:** `docs/modules/app.md`, `AGENTS.md` (*Lifecycle*). Tests:
+  `TranscriptionJournalTest` (twelve: the journal, the sweep sparing a journalled WAV, the bounded
+  attempts, each resume outcome), `DictationResumeTest` (journalled before the decode, ended on every
+  in-process outcome, and a kill mid-decode recovered end to end).
+- **Source:** lifecycle audit 2026-10-03, finding F2 · branch `claude/lifecycle-contract`

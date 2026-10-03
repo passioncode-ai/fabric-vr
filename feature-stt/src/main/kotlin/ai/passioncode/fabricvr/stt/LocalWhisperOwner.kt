@@ -1,5 +1,11 @@
 package ai.passioncode.fabricvr.stt
 
+import ai.passioncode.fabricvr.common.Log2
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -37,13 +43,43 @@ interface ClosableSttEngine : SttEngine {
  *
  * It lives in `feature-stt` rather than in `app` because the constraint is whisper's, not the
  * app's — a second consumer must not be able to get it wrong.
+ *
+ * **"For the process" is not an owner** (lifecycle contract LC-08, audit F1 of 2026-10-03,
+ * `DEC-0102`). `DEC-0007` kept the context for the process and pointed at an `onTrimMemory` that
+ * never existed, so the first dictation pinned up to 574 MB of native memory until the process
+ * died, on a headset that shares its memory with the streamed desktop. The context now has three
+ * release triggers, each of which costs the next dictation one model load (~2 s for `small`):
+ *
+ * - a model change — the eviction in [use], unchanged;
+ * - **an idle timeout** — [idleReleaseMs] after the last use ended, when [idleScope] is given;
+ * - **memory pressure** — the app calls [release] from `onTrimMemory` (see `MemoryTrim` in `:app`).
+ *
+ * Every trigger goes through the same mutex, so none of them can free a context a decode is
+ * inside: a release waits for the running `whisper_full` to finish, and the idle clock starts when
+ * a use **ends**, never while one runs.
+ *
+ * @param idleScope where the idle clock runs. Null means no idle release — the pre-`DEC-0102`
+ *   behaviour, kept for callers that own the lifetime some other way.
+ * @param idleReleaseMs how long the context may sit unused before it is freed.
  */
 class LocalWhisperOwner(
     private val storeFor: (WhisperModel) -> ModelStore,
     private val newEngine: (ModelStore) -> ClosableSttEngine = { WhisperEngine(it) },
+    private val idleScope: CoroutineScope? = null,
+    private val idleReleaseMs: Long = IDLE_RELEASE_MS,
 ) {
     private val lock = Mutex()
     private var loaded: Pair<WhisperModel, ClosableSttEngine>? = null
+
+    /**
+     * Bumped by every [use] **before** it waits for the lock, so an idle clock that runs out while
+     * a caller is queued sees a different number and leaves the context alone: somebody is about
+     * to need it. Read and compared under the lock by the clock itself.
+     */
+    private val uses = AtomicLong(0)
+
+    /** The pending idle release, if any. Only touched while holding [lock]. */
+    private var idleClock: Job? = null
 
     /**
      * Runs [block] against the engine for [model], loading or switching first if it has to.
@@ -64,22 +100,57 @@ class LocalWhisperOwner(
         onWait: (WhisperModel) -> Unit = {},
         block: suspend (SttEngine) -> T,
     ): T {
+        uses.incrementAndGet()
         if (lock.isLocked || loaded?.first != model) onWait(model)
         return lock.withLock {
-            val current = loaded
-            if (current == null || current.first != model) {
-                // Before the new one is constructed, never after: the whole reason this class
-                // exists is that two contexts must not be resident at the same moment.
-                current?.second?.close()
-                // Cleared BEFORE the construction. If `newEngine` throws, `loaded` would
-                // otherwise keep the pair whose engine was just closed, and every later use of
-                // that model would answer `SttFailed("engine closed")` until a different model
-                // was selected — the owner wedged rather than merely empty.
-                loaded = null
-                loaded = model to newEngine(storeFor(model))
+            try {
+                val current = loaded
+                if (current == null || current.first != model) {
+                    // Before the new one is constructed, never after: the whole reason this class
+                    // exists is that two contexts must not be resident at the same moment.
+                    current?.second?.close()
+                    // Cleared BEFORE the construction. If `newEngine` throws, `loaded` would
+                    // otherwise keep the pair whose engine was just closed, and every later use of
+                    // that model would answer `SttFailed("engine closed")` until a different model
+                    // was selected — the owner wedged rather than merely empty.
+                    loaded = null
+                    loaded = model to newEngine(storeFor(model))
+                }
+                block(loaded!!.second)
+            } finally {
+                // On every exit — success, failure, cancellation: the clock starts when the use
+                // ENDS, so a thirteen-minute decode is never counted as idle time.
+                armIdleClock()
             }
-            block(loaded!!.second)
         }
+    }
+
+    /**
+     * (Re)starts the idle clock. Called with [lock] held, which is what makes the cancel-and-
+     * replace below one step: no other use or release can interleave with it.
+     *
+     * The clock's own release re-takes the lock and frees only if no use has started since it was
+     * armed — the counter check, not the cancellation, is the guarantee, because a clock that has
+     * already woken and is queued on the lock cannot be relied upon to observe a cancel in time.
+     */
+    private fun armIdleClock() {
+        val scope = idleScope ?: return
+        idleClock?.cancel()
+        val armedAt = uses.get()
+        idleClock = scope.launch {
+            delay(idleReleaseMs)
+            lock.withLock {
+                if (uses.get() != armedAt || loaded == null) return@withLock
+                Log2.i("stt.whisper.released", "reason" to "idle", "after_ms" to idleReleaseMs)
+                freeLocked()
+            }
+        }
+    }
+
+    /** Frees the loaded context, if any. Only with [lock] held. */
+    private suspend fun freeLocked() {
+        loaded?.second?.close()
+        loaded = null
     }
 
     /**
@@ -87,7 +158,18 @@ class LocalWhisperOwner(
      * that would surface as a crash inside whisper.cpp — ours, looking like theirs (`I-25`).
      */
     suspend fun release() = lock.withLock {
-        loaded?.second?.close()
-        loaded = null
+        idleClock?.cancel()
+        idleClock = null
+        freeLocked()
+    }
+
+    companion object {
+        /**
+         * Five minutes. Long enough that a person pausing between two thoughts does not pay the
+         * reload (~2 s for `small`, more for the larger models) on every sentence; short enough
+         * that a context left behind by one dictation is not still holding 190–574 MB while the
+         * person spends the next hour in the streamed desktop. `DEC-0102`.
+         */
+        const val IDLE_RELEASE_MS: Long = 5 * 60 * 1000L
     }
 }

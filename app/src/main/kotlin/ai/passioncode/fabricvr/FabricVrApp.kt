@@ -23,6 +23,16 @@ class FabricVrApp : Application() {
     }
 
     /**
+     * The system is short of memory, or this app's UI has just been hidden: give back the whisper
+     * context, up to 574 MB of native memory nothing else will reclaim (LC-08, audit F1,
+     * `DEC-0102`). The release waits for a decode in flight; see [MemoryTrim].
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        Graph.memoryTrim.onTrimMemory(level)
+    }
+
+    /**
      * Names main-thread disk work in the log, in debug builds only.
      *
      * `penaltyLog`, never `penaltyDeath`. Death turns any third-party disk read — Room's, the

@@ -96,6 +96,71 @@ that needs a person is [docs/evidence/device-gate.md](docs/evidence/device-gate.
   counter never moves back, so that number stays a hole rather than being handed out twice. `check`
   accepts these registers on the `fs` record plane from agent-sync 1.21.1.
 
+## Lifecycle
+
+The organization's [lifecycle contract](https://github.com/passioncode-ai/fabric-workspace/blob/main/knowledge/lifecycle.md)
+(LC-01…LC-15, adopted 2026-10-03) holds here in its Android translation. This section is LC-09's
+declaration and LC-15's retention line; the receipts are the files and tests named in each row.
+
+### What runs, who starts it, who stops it (LC-09)
+
+- **One process, `ai.passioncode.fabricvr`, and nothing else on the headset.** No
+  `android:process`, no foreground service, no WorkManager, AlarmManager, JobScheduler or wake
+  lock, no boot receiver, no listening socket, no launchd label and no port. The debug variant's
+  merged manifest adds four library components, none of which runs on a schedule: androidx's
+  `InitializationProvider` (start-up initialisers), Room's `MultiInstanceInvalidationService`
+  (bound on demand), the Spatial SDK's `ChannelBrokerService` (bound by the SDK), and
+  `ProfileInstallReceiver` (answers only `DUMP`-holding callers). Checked with
+  `./gradlew :app:processDebugMainManifest`, which writes it under
+  `app/build/intermediates/merged_manifests/debug/`.
+- **Started by** the person opening the panel (`PanelActivity`) or the Space
+  (`ImmersiveActivity`); `FabricVrApp.onCreate` → `Graph.init` launches bounded start-up work —
+  reconcile, trash purge, scratch sweep, outbox restore, the resume of journalled transcriptions
+  (`DEC-0103`) — and one long-lived collector, the vault mirror, which is suspended until a row
+  changes.
+- **What keeps running with no window:** a transcription already started (bounded by the
+  ten-minute recording cap, about thirteen minutes of decode, `DEC-0032`), a model download the
+  person started, and the whisper context's idle clock. Nothing polls, nothing is scheduled, and
+  nothing starts while the app is in the background.
+- **Who stops it:** Android, by process teardown — there is no quit and nothing that needs one.
+  A decode killed with the process is journalled and resumed at the next launch (`DEC-0103`); a
+  download keeps its `.part` and resumes from it when the person next starts it. Making either
+  outlive the process, or resume the download unasked, is board row `B-264`.
+- **Host side: nothing resident.** `scripts/` holds one-shot build, install and check commands.
+
+### Heavy resources and their release triggers (LC-08, LC-02)
+
+| Resource | Owner | Released on |
+|---|---|---|
+| whisper context, 190–574 MB native | `LocalWhisperOwner` | a model change; 5 min idle after the last use; `onTrimMemory` ≥ `RUNNING_LOW` via `MemoryTrim`. Never under a running decode (`DEC-0102`; `LocalWhisperOwnerTest`, `MemoryTrimTest`) |
+| microphone (`AudioRecord`) | `AudioRecorder` | the `finally` of every recording, failed start included (`B-248`) |
+| audio focus (transient duck) | `PlatformFeedbackCues`, attached once by `Graph.init` | the `finally` of every recording: stop, cap, failure, discard, host cleared (`RecordingAudioFocusTest`, `ProcessAudioFocusTest`) |
+| note playback (`MediaPlayer`) | `AudioPlayback` via `PlaybackBinding` | a recording starting; its screen's `ON_STOP`; dispose (`PlaybackBindingTest`) |
+| tone generator (`AudioTrack`) | `ToneCueChannel` | `ImmersiveActivity.onDestroy`; re-opened by the next cue |
+| Space panel entity | `SpaceExit` | the *Leave* path; the system-ended path is `B-267` |
+
+**Idle budget, stated as a target and not yet measured on a headset:** no CPU work at rest (the
+only timers are each notes screen's midnight delay and the 500 ms progress read that runs only
+while a decode is on screen), and resident memory at the app's baseline once the idle clock has
+freed the whisper context. Measuring both is device-gate work.
+
+### Build output and its cap (LC-15)
+
+- **Release artefacts** are written under fixed names per variant —
+  `app/build/outputs/apk/<variant>/app-<variant>.apk` and `app/build/outputs/bundle/release/app-release.aab` —
+  so a build overwrites the previous one and at most one per variant is ever on disk.
+  `scripts/check-build-cache.sh` fails the gate the day `app/build.gradle.kts` starts versioning
+  those names. Releases themselves live in CI's uploaded artefacts, not on a build machine.
+- **Build caches:** every module's `build/`, `app/.cxx/` (the NDK's whisper.cpp compile) and
+  `.kotlin/`. **Cap: 3 GB** in total (`FABRICVR_BUILD_CAP_MB`). `bash scripts/build-cache.sh`
+  reports them; **`bash scripts/build-cache.sh enforce`** removes them when over the cap and is
+  what an agent that built runs before ending its run; `clean` removes them regardless. It deletes
+  only directories git ignores.
+- **Gradle's user home (`~/.gradle`)** is shared with every Gradle project on the machine, so the
+  script above does not touch it. A cold build and the full gate here fill it to 1.9 GB, 1.7 GB of it `caches/`
+  (measured 2026-10-03). Cap: 4 GB; over it, `./gradlew --stop && rm -rf ~/.gradle/caches`, and
+  the next build downloads again, verified against `gradle/verification-metadata.xml`.
+
 ## Organisation
 
 This repository is one of the `passioncode-ai` repositories. **The org map and onboarding live in

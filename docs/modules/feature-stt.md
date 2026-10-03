@@ -1,7 +1,8 @@
 # `:feature-stt`
 
 Speech into text, on the device by default. Placement and fallback decided in `DEC-0003`;
-the cleartext policy for a LAN server is `DEC-0005`; the native context's lifetime is `DEC-0007`.
+the cleartext policy for a LAN server is `DEC-0005`; the native context's lifetime is `DEC-0007`,
+whose "kept for the process" `DEC-0102` replaced with three named release triggers.
 
 ## Owns
 
@@ -82,7 +83,12 @@ the cleartext policy for a LAN server is `DEC-0005`; the native context's lifeti
   escape. **At most one context lives at a time** — 574 MB for `large-turbo`, on a device with no
   swap — and `LocalWhisperOwnerTest` asserts that ceiling across fifty interleaved uses rather than
   documenting it. `Graph` reaches it through `withStt { }` and `withEngine(provider, model) { }`;
-  nothing else may.
+  nothing else may. **The context has three release triggers** (`DEC-0102`, lifecycle contract
+  LC-08): a model change (the eviction above), an **idle clock** — `IDLE_RELEASE_MS`, five minutes
+  after the last use *ended*, armed only when the owner is given an `idleScope` — and `release()`,
+  which `:app` calls from `onTrimMemory`. All three take the same mutex, so none can free a
+  context a decode is inside; the idle clock also re-checks a use counter under the lock, so a
+  caller already queued keeps the context it is about to need.
 - **`WhisperEngine`** — serialises every call onto one thread, because whisper.cpp forbids
   concurrent access to a context. Converts `ShortArray / 32768f` to the float PCM it expects.
   **Cancelling the coroutine stops the running transcription** (`DEC-0060`): the bridge carries
@@ -320,7 +326,7 @@ the cleartext policy for a LAN server is `DEC-0005`; the native context's lifeti
 
 ## Checks
 
-**162 JVM tests in `:feature-stt`**, over 28 classes, counted from the JUnit XML a run of
+**166 JVM tests in `:feature-stt`**, over 28 classes, counted from the JUnit XML a run of
 `./gradlew :feature-stt:testDebugUnitTest` leaves behind — a build output, so it is named here as
 a procedure rather than as a path: `check-docs.sh` resolves every path a document writes, and a
 generated one resolves only on a machine that has just built. The number is recomputed by `check-docs.sh` §17 (`DEC-0053`). It said nineteen over four classes
@@ -335,8 +341,10 @@ did not check), `ModelDownloaderCancelTest` (2 — `B-250`: cancelling a stalled
 error, two redirects refused and one followed), `SttRouterTest` (9: local only, healthy server,
 failing server, hanging server, server with no local engine, nothing configured, a refusing remote
 degrading visibly, and `M13`'s pair — a remote 401 surviving a fallback that also fails, with the
-control that an unclassified remote leaves the fallback's own reason in place), `PcmBufferTest` (7), `LocalWhisperOwnerTest` (7 — the one-context ceiling
-across fifty interleaved uses), `ModelDownloadsTest` (7 — two starts one transfer, and `M15`: a
+control that an unclassified remote leaves the fallback's own reason in place), `PcmBufferTest` (7), `LocalWhisperOwnerTest` (11 — the one-context ceiling
+across fifty interleaved uses, and `DEC-0102`'s four: freed after the idle timeout and reloaded by
+the next dictation on a fake clock, every use restarting the clock, a decode longer than the
+timeout never freed under it, and an idle release followed by an explicit one freeing once), `ModelDownloadsTest` (7 — two starts one transfer, and `M15`: a
 `start` arriving during a cancel waits for the writer instead of opening a second one on the same
 `.part`. **That case has no wall clock in it since `B-186`**: it asserted the sink count after a
 `realTime { delay(500) }`, lost the race once in a full multi-module run and never reproduced in
@@ -534,7 +542,8 @@ measurement, not a preference.
 over the OpenAI-compatible route · `DEC-0014` the provider is an explicit choice · `DEC-0015` five
 on-device models · `DEC-0016` the digest is pinned and enforced · `DEC-0017` the redirect
 allow-list belongs to the store · `DEC-0019` changing the model closes the loaded context, which
-narrows `DEC-0007` · `DEC-0030` one context, one owner, and a `suspend` close that never holds the
+narrows `DEC-0007` · `DEC-0102` the context has release triggers — model change, five minutes
+idle, memory pressure — instead of living for the process · `DEC-0030` one context, one owner, and a `suspend` close that never holds the
 caller's thread — which refines both of those and is why `runBlocking` is now a build gate. ·
 `DEC-0033` one download per model, owned by the
 process, refused up front when there is no room ·

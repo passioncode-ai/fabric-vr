@@ -160,6 +160,7 @@ class ClipboardPromiseTest {
         currentProvider = { SttProvider.LOCAL },
         audioDir = { File(root, "audio").apply { mkdirs() } },
         outbox = outbox,
+        journal = ai.passioncode.fabricvr.TranscriptionJournal(null),
         appScope = appScope,
         io = dispatcher,
     )
