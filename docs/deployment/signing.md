@@ -18,7 +18,7 @@ not on a development machine, and it has three homes and no fourth:
    the copy CI signs with. The environment's reviewers are the team `release-approvers`, any member
    of which may approve, the person who pushed the tag included (`prevent_self_review: false`, the
    organization's rule since 2026-10-03: `passioncode-ai/.github` `release-signing/README.md`,
-   fabric-workspace `knowledge/rules.md` §11); administrators cannot bypass it, and only `v*` tags
+   fabric-workspace `knowledge/rules.md` §11; `DEC-0105`); administrators cannot bypass it, and only `v*` tags
    may deploy to it.
 
 **Nobody's laptop holds it, and a build signed anywhere else is never published.** Headset testing

@@ -4,7 +4,7 @@
 scope, security, data, pricing or process. Doctrine:
 `references/documentation.md`.
 
-**Next free ID:** `DEC-0105`
+**Next free ID:** `DEC-0106`
 
 Reading *"Next free ID"* is **not** reserving it — a second agent reading it in the
 same minute gets the same answer. Reserve it, then write.
@@ -3337,7 +3337,8 @@ one, leave its body intact. Never renumber. Never delete.
 ### DEC-0104 — The release key is the organization's, and only CI signs with it
 
 - **Date:** 2026-10-03
-- **Status:** Accepted
+- **Status:** Accepted · **Partially superseded by DEC-0105** — any member of `release-approvers`
+  may approve a release, the person who pushed the tag included; the rest stands
 - **Context:** `B-165` waited on a person to create the release keystore on the maintainer's
   machine (`DEC-0049`'s *Human steps*). On 2026-10-03 the operator decided that every PassionCode.ai
   product signs its published builds **only in GitHub Actions**, in the repository's protected
@@ -3389,3 +3390,29 @@ one, leave its body intact. Never renumber. Never delete.
 - **Refines:** DEC-0049
 - **Source:** operator decision 2026-10-03 (organization release signing, passioncode-ai/.github
   `release-signing/`) · branch `feat/release-in-ci`
+
+### DEC-0105 — Any release approver may approve a release, the person who pushed the tag included
+
+- **Date:** 2026-10-04
+- **Status:** Accepted
+- **Context:** `DEC-0104` recorded that a release needs an approver who is not the tag's author
+  (its *What it costs* line). On 2026-10-03 the operator changed the organization's rule: the
+  `release` environment waits for any member of the team `release-approvers`, and that may be the
+  person who pushed the tag. passioncode-ai/.github `scripts/setup-release-env.py` sets
+  `prevent_self_review: false` from `release-signing/products.json`, and this repository's
+  `release` environment carries it (`required_reviewers`, `prevent_self_review: false`, read from
+  the GitHub API on 2026-10-04). Administrators still cannot bypass the gate, and only `v*` tags
+  may deploy. An agent approves only when the operator has told it to, and says so in the approval
+  comment (fabric-workspace `knowledge/rules.md` §11).
+- **Decision:** one approval from any member of `release-approvers` releases Fabric VR, whoever
+  pushed the tag. Four eyes come back with one field: `prevent_self_review: true` for Fabric VR in
+  `release-signing/products.json`, then a re-run of `setup-release-env.py` — and a new decision
+  here.
+- **What it costs:** one person can tag and release alone. What still stands between a tag and a
+  published APK: the environment's approval, the published-certificate check
+  (`scripts/verify-release-apk.sh`), the Sigstore attestation and the GPG-signed `SHA256SUMS`.
+- **Consequences / affects:** `README.md` and `docs/deployment/signing.md` (their approval wording,
+  corrected in `9f6f311`), `docs/evidence/backlog.md` (`B-273`, closed by this record).
+- **Supersedes:** DEC-0104, in part — only its rule and cost line about a second approver
+- **Source:** operator decision 2026-10-03 (passioncode-ai/.github `release-signing/README.md`) ·
+  backlog sweep 2026-10-04, commit `9f6f311` and branch `agent/dec-approver-2026-10-04`
