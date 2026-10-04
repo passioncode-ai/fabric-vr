@@ -66,6 +66,8 @@ only one home can.
 | A module's contracts and refusals | `docs/modules/<module>.md` | link |
 | Research facts | `docs/research/*` (dated records) | cite the file |
 | Where a credential lives, who holds it, how it is backed up | `docs/deployment/signing.md` | link — **never the value** (`DEC-0049`) |
+| The release certificate's SHA-256 | `docs/deployment/signing.md` | `scripts/verify-release-apk.sh` enforces it, and `scripts/check-release-apk.sh` fails if the two differ (`DEC-0104`) |
+| What each release contains | `CHANGELOG.md` | the release notes are its `## X.Y.Z` section, taken by the organization's publish workflow (`DEC-0104`) |
 | The licence of this project's own code | `LICENSE` + `COMMERCIAL-LICENSE.md` (Fabric ADR-0092) | `README.md` → License links them |
 | Each third-party component and its licence | `NOTICE` (`DEC-0073`; copied into the APK) | link — never a second list |
 | How to report a vulnerability, and what is in scope | `SECURITY.md` | link |
@@ -89,6 +91,8 @@ column is a finding, not a blank.
 | **A run ends, or the entry point moves** | the current entry point — `docs/handoff/2026-09-22-v3-entry.md` today — is replaced whole; the previous one gets a `> **SUPERSEDED` banner above its title and **no other edit**; `README.md` names the new one and only it (`DEC-0055`) | gate §20 handoff currency. **This row named `2026-09-20-v2-entry.md` for two runs after it stopped being current** — the matrix itself is a surface that must learn, and §20 checks the README rather than this cell |
 | **A gesture, screen or device address changes** | `docs/evidence/device-gate.md`'s *walk* — the steps name controls, and a gate is the part of a handoff that goes stale fastest | review — whether a step is still performable needs a person; §20 only guarantees the reader reaches the right file |
 | A signing credential's home changes | `docs/deployment/signing.md`, and nothing else names the path | `bash scripts/check-secrets.sh` §2b |
+| The release key is rotated (`DEC-0104`) | `docs/deployment/signing.md`'s fingerprint **and** `RELEASE_CERT_SHA256` in `scripts/verify-release-apk.sh`, in one change | `bash scripts/check-release-apk.sh` |
+| A user-visible change lands | `CHANGELOG.md` → `## Unreleased`; a release renames it `## X.Y.Z` | review — whether a change is user-visible is a judgement |
 
 
 **Start with the row above.** The most frequent change in any documented project is *adding a document*, and it is the row nobody writes — so the matrix ends up unable to catch the class it will meet most. On the project this practice comes from, nine findings across five audits were that one missing row.
@@ -115,15 +119,16 @@ The table below is **the list, in execution order** — seventeen of them. It li
 | 8 | Strings — duplicates, exemptions, library modules (`DEC-0045`) | `bash scripts/check-strings.sh` | before the commit | yes |
 | 9 | Installer (`DEC-0048`; closes `H-30`, `H-31`) | `bash scripts/check-installer.sh` | before the commit | yes — it runs the real script against a fake `adb`, and its third case is the canary: without one proving a *correct* install still succeeds, a script that exited non-zero for any reason would pass the other two |
 | 9a | Build-output prune (LC-15 of the organization's lifecycle contract) | `bash scripts/check-build-cache.sh` | before the commit | yes — runs the real `scripts/build-cache.sh` against a throwaway repository carrying this `.gitignore`: it prunes over the cap, keeps sources, refuses by name a directory git does not ignore (the canary), and asserts the APK/AAB names are fixed per variant, which is what keeps releases at one per variant |
-| 10 | Native bridge compiles (`DEC-0061`), and is linked for 16 KB pages (`B-104`) | `bash scripts/check-native.sh` | before the commit | yes — one file, `-fsyntax-only`, ~1.4 s; reports and passes where there is no NDK. The page-size flag is a configuration check and runs even without one |
-| 11 | Every shell script parses (`DEC-0062`) | `bash scripts/check-shell.sh` | before the commit | yes — `bash -n`, milliseconds; it exists because an apostrophe inside a single-quoted `awk` program closed the string **three separate times in one session** |
-| 12 | **The gates' own negative tests** (`DEC-0056`) | `bash scripts/selftest.sh` | before the commit | yes. **The script prints its own split** — planted defects and controls — because three documents restated it and all three were wrong, three different ways (`DEC-0062`). A case that stops failing is a check that has stopped working. **~3:45**, most of the suite's runtime, and the price of the claim |
-| 13 | UX documents | `python3 docs/ux/lint.py` | before the commit | yes |
-| 14 | JVM test suite, and the instrumented sources compile (`REQ-068`) | `./gradlew --no-daemon testDebugUnitTest compileDebugAndroidTestKotlin` | before the commit | yes — it compiles `androidTest` and runs none of it; only a headset runs that |
-| 15 | Strings — unreferenced, `:app` only | `lint { error += "UnusedResources" }` | CI's release job — it needs the NDK | yes, in CI |
-| 16 | Dependency verification | automatic, from `gradle/verification-metadata.xml` | every resolution | yes — and a **cold** re-resolve nightly in CI (`DEC-0050`) |
+| 10 | Release APK verifier (`DEC-0104`) | `bash scripts/check-release-apk.sh` | before the commit | yes — it runs the real `scripts/verify-release-apk.sh` against a fake `apksigner` and `aapt2` in both spellings the real tools print, with a canary; it also fails if the fingerprint the verifier enforces drifts from `docs/deployment/signing.md`, or if `release.yml` puts a keystore secret anywhere but an environment mapping. The real APK is verified by the same script in `release.yml` |
+| 11 | Native bridge compiles (`DEC-0061`), and is linked for 16 KB pages (`B-104`) | `bash scripts/check-native.sh` | before the commit | yes — one file, `-fsyntax-only`, ~1.4 s; reports and passes where there is no NDK. The page-size flag is a configuration check and runs even without one |
+| 12 | Every shell script parses (`DEC-0062`) | `bash scripts/check-shell.sh` | before the commit | yes — `bash -n`, milliseconds; it exists because an apostrophe inside a single-quoted `awk` program closed the string **three separate times in one session** |
+| 13 | **The gates' own negative tests** (`DEC-0056`) | `bash scripts/selftest.sh` | before the commit | yes. **The script prints its own split** — planted defects and controls — because three documents restated it and all three were wrong, three different ways (`DEC-0062`). A case that stops failing is a check that has stopped working. **~3:45**, most of the suite's runtime, and the price of the claim |
+| 14 | UX documents | `python3 docs/ux/lint.py` | before the commit | yes |
+| 15 | JVM test suite, and the instrumented sources compile (`REQ-068`) | `./gradlew --no-daemon testDebugUnitTest compileDebugAndroidTestKotlin` | before the commit | yes — it compiles `androidTest` and runs none of it; only a headset runs that |
+| 16 | Strings — unreferenced, `:app` only | `lint { error += "UnusedResources" }` | ci.yml's nightly `release build` job — it needs the NDK | yes, in CI |
+| 17 | Dependency verification | automatic, from `gradle/verification-metadata.xml` | every resolution | yes — and a **cold** re-resolve nightly in CI (`DEC-0050`) |
 
-**Gate 12 is the one that keeps the other sixteen honest.** Five sections of the documentation
+**Gate 13 is the one that keeps the other seventeen honest.** Five sections of the documentation
 gate were written with "watched failing against a planted defect" in their own headers, and a
 blind verification found five of the six evadable — the claim was true when written and nothing
 kept it true. `scripts/selftest.sh` plants each defect and asserts the refusal, in the repository
@@ -131,7 +136,7 @@ rather than in a commit message (`DEC-0056`).
 
 **A gate that loses a check prints the same word** (`DEC-0063`). `check-all.sh` records what each
 gate prints on a clean tree and refuses a run where one prints fewer — a ratchet that may only
-rise. It names the script, never the check; naming the check is gate 12's job, for the sections it
+rise. It names the script, never the check; naming the check is gate 13's job, for the sections it
 covers. The incident it exists for: a `git checkout` deleted a whole section of `check-strings.sh`
 and the suite stayed green with one fewer `ok:` line, while a decision record described the check
 for days afterwards.

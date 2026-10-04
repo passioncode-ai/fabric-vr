@@ -4,7 +4,7 @@
 scope, security, data, pricing or process. Doctrine:
 `references/documentation.md`.
 
-**Next free ID:** `DEC-0104`
+**Next free ID:** `DEC-0106`
 
 Reading *"Next free ID"* is **not** reserving it — a second agent reading it in the
 same minute gets the same answer. Reserve it, then write.
@@ -1470,7 +1470,8 @@ one, leave its body intact. Never renumber. Never delete.
 ### DEC-0049 — The signing key lives outside the repository, with a custodian, two backups and named passwords
 
 - **Date:** 2026-09-21
-- **Status:** Accepted
+- **Status:** Accepted · **Refined by DEC-0104** — the key exists; it is the organization's, its
+  homes are the vault, its off-disk backup and the `release` environment, and only CI signs with it
 - **Context:** `H-34`. The Android signing key is the only artefact in this project with **no
   recovery path**: once a signed build is on a headset, losing the key means every future upgrade
   is an `adb uninstall` that takes `filesDir` with it — the notes, the whole vault, every
@@ -3397,3 +3398,86 @@ one, leave its body intact. Never renumber. Never delete.
   attempts, each resume outcome), `DictationResumeTest` (journalled before the decode, ended on every
   in-process outcome, and a kill mid-decode recovered end to end).
 - **Source:** lifecycle audit 2026-10-03, finding F2 · branch `claude/lifecycle-contract`
+
+### DEC-0104 — The release key is the organization's, and only CI signs with it
+
+- **Date:** 2026-10-03
+- **Status:** Accepted · **Partially superseded by DEC-0105** — any member of `release-approvers`
+  may approve a release, the person who pushed the tag included; the rest stands
+- **Context:** `B-165` waited on a person to create the release keystore on the maintainer's
+  machine (`DEC-0049`'s *Human steps*). On 2026-10-03 the operator decided that every PassionCode.ai
+  product signs its published builds **only in GitHub Actions**, in the repository's protected
+  `release` environment, approved by the team `release-approvers` and never by whoever pushed the
+  tag (passioncode-ai/.github `release-signing/README.md`, decision D8 for Android). The
+  organization's tooling created Fabric VR's keystore — PKCS12, RSA 4096, alias `fabricvr`, valid
+  until 2056-09-25 — and put it in the Project Observatory vault (slot `fabric-vr/prod`, with its
+  encrypted off-disk backup) and in this repository's `release` environment. So the key exists, and
+  the place `DEC-0049` expected it — a file on a laptop — is the one place it must not be.
+- **Decision.**
+  - **The release keystore has three homes and no fourth:** the vault slot `fabric-vr/prod`, the
+    vault's encrypted off-disk backup, and the `release` environment. No development machine holds
+    it. Its certificate SHA-256 is published in `docs/deployment/signing.md`.
+  - **Releases are built by `.github/workflows/release.yml` and nothing else.** On a `vX.Y.Z` tag
+    (or a dispatch on a `vX.Y.Z-rc.N` tag with `publish=false`, the rehearsal) the `android` job
+    waits for approval, decodes the keystore into `$RUNNER_TEMP`, writes a `keystore.properties`
+    with the path and alias only, builds `:app:assembleRelease` with the passwords in
+    `FABRICVR_KEYSTORE_PASSWORD` / `FABRICVR_KEY_PASSWORD` (environment, never `-P`, which is
+    argv), verifies the APK, and uploads it as `release-android`; the organization's
+    `release-publish.yml@v1` attests, sums, signs the sums and publishes.
+  - **The APK is verified against the published certificate before it is uploaded.**
+    `scripts/verify-release-apk.sh` requires APK Signature Scheme v2 or v3, one signer, the
+    published certificate SHA-256 — with no override — and a release manifest: not debuggable,
+    `targetSdkVersion` 34, `minSdkVersion` 29–34, arm64 only, and a `versionName` that is the tag's
+    version. Those are Meta's Quest packaging rows (`VRC.Quest.Packaging.2`, `.6`, the release
+    manifest page) plus the one fact only this repository knows. `scripts/check-release-apk.sh`
+    runs it against a fake `apksigner` and `aapt2` in both spellings the real tools use, and fails
+    if the verifier's fingerprint and `signing.md` disagree or if `release.yml` puts a keystore
+    secret anywhere but a plain environment mapping.
+  - **`DEC-0049` stands where it is about the build:** `keystore.properties` holds the path and the
+    alias only, and the passwords come from the environment. What changes is who runs it: a build
+    signed anywhere but the `release` environment is a debug build and is never published. Headset
+    testing stays debug-signed.
+  - **ci.yml's nightly `release build` job stays unsigned.** It needs no approval and proves R8, the
+    NDK and lint every night; the signed build is release.yml's alone.
+- **What it costs:** a release now needs a second person (an approver who is not the tag's author).
+  The key cannot be read back out of GitHub, so the vault and its backup are the only copies that
+  can restore it. **`T-037` is still open**: both headsets carry debug-signed builds, a
+  release-signed APK cannot install over them without the uninstall that deletes the vault, and
+  the debug→release rotation lineage `T-037` plans needs both keys in one place — which is now a
+  CI job, not a laptop. The verifier was measured on a real `:app:assembleRelease` signed with a
+  throwaway key (deleted afterwards): every check passed except the certificate, which it refused;
+  AGP 8.11.1 signed that APK with v2 only (v1 and v3 off), which meets Meta's v2 requirement.
+- **Consequences / affects:** `.github/workflows/release.yml` (new), `.github/workflows/ci.yml`,
+  `scripts/verify-release-apk.sh` (new), `scripts/check-release-apk.sh` (new),
+  `scripts/check-all.sh`, `scripts/selftest.sh`, `app/build.gradle.kts`,
+  `keystore.properties.sample`, `docs/deployment/signing.md`, `README.md`, `AGENTS.md`,
+  `docs/DOCMAP.md`, `CHANGELOG.md` (new), `docs/handoff/2026-09-22-v3-entry.md`.
+- **Refines:** DEC-0049
+- **Source:** operator decision 2026-10-03 (organization release signing, passioncode-ai/.github
+  `release-signing/`) · branch `feat/release-in-ci`
+
+### DEC-0105 — Any release approver may approve a release, the person who pushed the tag included
+
+- **Date:** 2026-10-04
+- **Status:** Accepted
+- **Context:** `DEC-0104` recorded that a release needs an approver who is not the tag's author
+  (its *What it costs* line). On 2026-10-03 the operator changed the organization's rule: the
+  `release` environment waits for any member of the team `release-approvers`, and that may be the
+  person who pushed the tag. passioncode-ai/.github `scripts/setup-release-env.py` sets
+  `prevent_self_review: false` from `release-signing/products.json`, and this repository's
+  `release` environment carries it (`required_reviewers`, `prevent_self_review: false`, read from
+  the GitHub API on 2026-10-04). Administrators still cannot bypass the gate, and only `v*` tags
+  may deploy. An agent approves only when the operator has told it to, and says so in the approval
+  comment (fabric-workspace `knowledge/rules.md` §11).
+- **Decision:** one approval from any member of `release-approvers` releases Fabric VR, whoever
+  pushed the tag. Four eyes come back with one field: `prevent_self_review: true` for Fabric VR in
+  `release-signing/products.json`, then a re-run of `setup-release-env.py` — and a new decision
+  here.
+- **What it costs:** one person can tag and release alone. What still stands between a tag and a
+  published APK: the environment's approval, the published-certificate check
+  (`scripts/verify-release-apk.sh`), the Sigstore attestation and the GPG-signed `SHA256SUMS`.
+- **Consequences / affects:** `README.md` and `docs/deployment/signing.md` (their approval wording,
+  corrected in `9f6f311`), `docs/evidence/backlog.md` (`B-273`, closed by this record).
+- **Supersedes:** DEC-0104, in part — only its rule and cost line about a second approver
+- **Source:** operator decision 2026-10-03 (passioncode-ai/.github `release-signing/README.md`) ·
+  backlog sweep 2026-10-04, commit `9f6f311` and branch `agent/dec-approver-2026-10-04`

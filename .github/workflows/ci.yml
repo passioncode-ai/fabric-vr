@@ -175,7 +175,7 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" || true
           test -d "$ANDROID_HOME/ndk/$NDK_VERSION"
         env:
-          NDK_VERSION: '27.2.12479018'   # feature-stt/build.gradle.kts:9 — keep the two in step
+          NDK_VERSION: '27.2.12479018'   # feature-stt/build.gradle.kts:9 — keep it, release.yml and this in step
 
       - uses: gradle/actions/setup-gradle@v5
 
@@ -202,10 +202,12 @@ jobs:
         # downgrade install. One sequence, and it is the one reproducible from a commit (`T-038`).
         run: ./gradlew --no-daemon :app:assembleRelease
 
-      # THIS APK IS UNSIGNED: keystore.properties is untracked and absent on a runner, so the build
-      # takes its unsigned branch and logs that it did. It proves R8, the NDK and the manifest
-      # merge — not signing, and not that any headset will install it. Signing is T-039, the
-      # install procedure is T-037, publishing is T-041.
+      # THIS APK IS UNSIGNED, and stays so: keystore.properties is untracked and absent here, so the
+      # build takes its unsigned branch and logs that it did. It proves R8, the NDK, lint and the
+      # manifest merge every night with no approval — not signing, and not that any headset will
+      # install it. The signed release is `release.yml` alone, in the protected `release`
+      # environment, on a version tag (`DEC-0104`, docs/deployment/signing.md); this job never
+      # touches the release key. The install procedure is T-037.
       - uses: actions/upload-artifact@v6
         with:
           name: app-release-unsigned-${{ github.run_number }}

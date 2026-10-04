@@ -72,6 +72,7 @@ verdict_floor() {
     check-strings)     echo 4 ;;
     check-installer)   echo 4 ;;
     check-build-cache) echo 6 ;;
+    check-release-apk) echo 16 ;;
     check-native)      echo 1 ;;
     check-shell)       echo 1 ;;
     *)                 echo 0 ;;
@@ -125,6 +126,12 @@ gate scripts/check-installer.sh
 # a throwaway repository — it prunes over the cap, keeps sources, refuses a directory git does not
 # ignore — and the APK/AAB names are asserted fixed, which is what keeps releases at one per variant.
 gate scripts/check-build-cache.sh
+# The release verifier must refuse every APK it exists to refuse (`DEC-0104`): another key, a
+# v1-only signature, a debug manifest, 32-bit code, a version that is not the tag's. It runs the
+# real `verify-release-apk.sh` against a fake `apksigner` and `aapt2`, with a canary, and fails if
+# the fingerprint it enforces drifts from `docs/deployment/signing.md` or `release.yml` puts a
+# keystore secret anywhere but an environment mapping. Milliseconds; no SDK needed.
+gate scripts/check-release-apk.sh
 # **One file, `-fsyntax-only`, ~1.4 s.** The full native build is deliberately not here — it pulls
 # the NDK and a whole arm64 compile of whisper.cpp — and the consequence was that NOTHING compiled
 # the JNI bridge before a push: CI's cheap job has no NDK by design, so a syntax error in it

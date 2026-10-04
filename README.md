@@ -45,7 +45,8 @@ session for something that already happened.
    ([Build and install](#build-and-install)). Without a headset the build is as far as it goes.
 2. **Configure:** no account and no key. The build needs Android Studio's JBR as `JAVA_HOME` and
    `local.properties` naming the SDK; the app downloads its speech model on first dictation.
-   A release signing key has a named custodian: read `docs/deployment/signing.md` before making one.
+   No signing key either: releases are signed only in CI, with the organization's release key
+   (`DEC-0104`, [`docs/deployment/signing.md`](docs/deployment/signing.md)); a headset gets the debug build.
 3. **MCP:** none yet. The app will reach Fabric only through Fabric's northbound MCP over one
    relay (Fabric ADR-0088), and the relay is not built.
 4. **Develop:** `bash scripts/check-all.sh` is the gate ([Checks](#checks)), and
@@ -151,28 +152,31 @@ sequences over one field cannot be ordered against each other.
 
 The release build minifies with `app/proguard-rules.pro` and shrinks resources — 74 MB against the
 debug APK's 145 MB. Without a `keystore.properties` the build still succeeds and says plainly that
-the APK is unsigned.
+the APK is unsigned; that is what a local `assembleRelease` and CI's nightly `release build` job
+produce.
 
-**Read `docs/deployment/signing.md` before creating a signing key.** It is the one artefact in
-this project with no recovery path: once a signed build is on a headset, losing the key means every
-future upgrade is an uninstall that takes the notes, the vault and the 190 MB model with it. The
-short version —
-
-```bash
-keytool -genkeypair -v -keystore "$HOME/<outside this repo>/fabric-vr-release.keystore" \
-  -alias fabricvr -keyalg RSA -keysize 4096 -validity 10000 -storetype PKCS12
-```
-
-— the path is **absolute and outside the repository**, and **the passwords do not go in
-`keystore.properties`** (`DEC-0049`: the key has a named custodian and two backups, and the two
-passwords are names in a credential store rather than values anywhere). They live in the machine's
-credential store under those names, and the release is built through the tool that puts them in
-the environment without printing them:
+**A signed release is built only by CI** (`DEC-0104`): push an annotated `vX.Y.Z` tag, someone from
+`release-approvers` approves the `release` environment (any member, the person who pushed the tag
+included: `prevent_self_review: false`, the organization's rule since 2026-10-03, `DEC-0105`), and
+`.github/workflows/release.yml` decodes the release keystore into the runner's temp directory,
+builds `:app:assembleRelease` with the passwords in the environment (never in a file, `DEC-0049`), and runs
+`scripts/verify-release-apk.sh` — APK Signature Scheme v2/v3, the published certificate
+SHA-256, a release manifest, the tag's version. The organization's publish workflow then attests
+the APK (Sigstore), writes `SHA256SUMS` with a GPG signature, and publishes the GitHub release from
+this repository's `CHANGELOG.md`. A rehearsal publishes nothing:
 
 ```bash
-<secret-runner> run fabric-vr \
-  FABRICVR_KEYSTORE_PASSWORD,FABRICVR_KEY_PASSWORD -- ./gradlew :app:assembleRelease
+git tag -a v0.1.0-rc.1 -m "rehearsal" && git push origin v0.1.0-rc.1
+gh workflow run release.yml --ref v0.1.0-rc.1 -f publish=false
 ```
+
+**The release key never comes to a development machine.** It lives in the Observatory vault, its
+encrypted off-disk backup and the repository's `release` environment;
+[`docs/deployment/signing.md`](docs/deployment/signing.md) has the alias, the fingerprint and what
+losing it costs — every installed copy could never be updated again. A build signed anywhere else
+is a debug build and is never published. **Do not install a release APK over the debug build on a
+headset** until `T-037` has run: Android refuses a different key, and the way past it deletes the
+notes.
 
 `.gitignore` and the secret scan refuse tracked key material (`*.keystore`, `*.jks`, `*.p12`,
 `*.pepk`, `release-lineage.bin`), and that refusal has been watched firing on a planted file.
@@ -266,8 +270,9 @@ file or passing `--dependency-verification off` — `docs/runbooks/dependencies.
 things you actually need, including how to regenerate it after a version bump. The file is also
 this project's SBOM.
 
-`.github/workflows/ci.yml` runs the gates on every push and the release build on `main`, the
-repository's one branch (`DEC-0099`). **It cannot run the instrumented suite**: those tests need arm64, Horizon OS and
+`.github/workflows/ci.yml` runs the gates on every push and the unsigned release build on `main`,
+the repository's one branch (`DEC-0099`); `.github/workflows/release.yml` builds the signed release
+on a version tag (`DEC-0104`). **It cannot run the instrumented suite**: those tests need arm64, Horizon OS and
 the Spatial SDK runtime, and a hosted x86 emulator would run none of them.
 
 ## Where things are
