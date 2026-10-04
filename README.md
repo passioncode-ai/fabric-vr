@@ -156,7 +156,8 @@ the APK is unsigned; that is what a local `assembleRelease` and CI's nightly `re
 produce.
 
 **A signed release is built only by CI** (`DEC-0104`): push an annotated `vX.Y.Z` tag, someone from
-`release-approvers` other than the tag's author approves the `release` environment, and
+`release-approvers` approves the `release` environment (any member, the person who pushed the tag
+included: `prevent_self_review: false`, the organization's rule since 2026-10-03), and
 `.github/workflows/release.yml` decodes the release keystore into the runner's temp directory,
 builds `:app:assembleRelease` with the passwords in the environment (never in a file, `DEC-0049`), and runs
 `scripts/verify-release-apk.sh` — APK Signature Scheme v2/v3, the published certificate

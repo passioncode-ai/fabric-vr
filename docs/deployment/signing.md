@@ -15,9 +15,11 @@ not on a development machine, and it has three homes and no fourth:
    `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` — the original;
 2. the vault's **encrypted off-disk backup** — the second copy;
 3. this repository's protected GitHub environment **`release`**, as secrets of the same four names —
-   the copy CI signs with. The environment's reviewers are the team `release-approvers`, the person
-   who pushed the tag cannot approve, administrators cannot bypass it, and only `v*` tags may deploy
-   to it.
+   the copy CI signs with. The environment's reviewers are the team `release-approvers`, any member
+   of which may approve, the person who pushed the tag included (`prevent_self_review: false`, the
+   organization's rule since 2026-10-03: `passioncode-ai/.github` `release-signing/README.md`,
+   fabric-workspace `knowledge/rules.md` §11); administrators cannot bypass it, and only `v*` tags
+   may deploy to it.
 
 **Nobody's laptop holds it, and a build signed anywhere else is never published.** Headset testing
 stays **debug-signed**: `./gradlew :app:assembleDebug` and `scripts/install-on-quest.sh`, exactly
@@ -124,8 +126,8 @@ somebody opened it and saw the right fingerprint, not that it exists.*
 1. Merge the release commit to `main` through the gates, with its `CHANGELOG.md` section
    `## X.Y.Z` (the version is `versionName` in `app/build.gradle.kts`, without the `+<sha>`).
 2. Push an annotated tag: `git tag -a vX.Y.Z <commit> -m "Fabric VR X.Y.Z" && git push origin vX.Y.Z`.
-3. The `android` job waits for the `release` environment. Someone from `release-approvers` other
-   than the tag's author approves it ("Review deployments").
+3. The `android` job waits for the `release` environment. Someone from `release-approvers` approves
+   it ("Review deployments"); the person who pushed the tag may.
 4. The job decodes the keystore into `$RUNNER_TEMP`, writes a `keystore.properties` with the path
    and alias only, runs `./gradlew :app:assembleRelease` with the passwords in the environment, and
    runs `scripts/verify-release-apk.sh` on the APK: APK Signature Scheme v2 or v3, exactly one
