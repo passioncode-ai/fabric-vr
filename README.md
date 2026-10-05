@@ -344,7 +344,7 @@ paired; `DEC-0010` — recording is press-to-start, press-to-stop, with no hold 
 ## License
 
 Open source under the [GNU AGPL-3.0](LICENSE). A [commercial license](COMMERCIAL-LICENSE.md) is
-available for use that does not meet the AGPL's terms — contact@passioncode.ai.
+available for use that does not meet the AGPL's terms — [passioncode.ai/business](https://passioncode.ai/business/).
 No version was released under another licence: until 2026-09-30 the repository carried no licence
 file, and nothing has been published. Third-party code keeps its own licence — whisper.cpp in
 `third_party/` (MIT), the Meta Spatial SDK and the Apache-2.0 libraries — as listed in
