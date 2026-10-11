@@ -4,7 +4,7 @@
 scope, security, data, pricing or process. Doctrine:
 `references/documentation.md`.
 
-**Next free ID:** `DEC-0106`
+**Next free ID:** `DEC-0107`
 
 Reading *"Next free ID"* is **not** reserving it — a second agent reading it in the
 same minute gets the same answer. Reserve it, then write.
@@ -3402,8 +3402,9 @@ one, leave its body intact. Never renumber. Never delete.
 ### DEC-0104 — The release key is the organization's, and only CI signs with it
 
 - **Date:** 2026-10-03
-- **Status:** Accepted · **Partially superseded by DEC-0105** — any member of `release-approvers`
-  may approve a release, the person who pushed the tag included; the rest stands
+- **Status:** Accepted · **Partially superseded by DEC-0105 and DEC-0106** — any member of
+  `release-approvers` may approve a release, the person who pushed the tag included (DEC-0105), and
+  since 2026-10-11 releases are approved by checks, not by a person (DEC-0106); the rest stands
 - **Context:** `B-165` waited on a person to create the release keystore on the maintainer's
   machine (`DEC-0049`'s *Human steps*). On 2026-10-03 the operator decided that every PassionCode.ai
   product signs its published builds **only in GitHub Actions**, in the repository's protected
@@ -3459,7 +3460,7 @@ one, leave its body intact. Never renumber. Never delete.
 ### DEC-0105 — Any release approver may approve a release, the person who pushed the tag included
 
 - **Date:** 2026-10-04
-- **Status:** Accepted
+- **Status:** Accepted · **Superseded by DEC-0106** — releases are approved by checks, not by a person
 - **Context:** `DEC-0104` recorded that a release needs an approver who is not the tag's author
   (its *What it costs* line). On 2026-10-03 the operator changed the organization's rule: the
   `release` environment waits for any member of the team `release-approvers`, and that may be the
@@ -3481,3 +3482,29 @@ one, leave its body intact. Never renumber. Never delete.
 - **Supersedes:** DEC-0104, in part — only its rule and cost line about a second approver
 - **Source:** operator decision 2026-10-03 (passioncode-ai/.github `release-signing/README.md`) ·
   backlog sweep 2026-10-04, commit `9f6f311` and branch `agent/dec-approver-2026-10-04`
+
+### DEC-0106 — A release is approved by checks: the tag on main and green CI, not a click
+
+- **Date:** 2026-10-11
+- **Status:** Accepted
+- **Context:** signed builds across PassionCode.ai products waited hours for a "Review deployments"
+  click nobody saw. On 2026-10-11 the operator chose approval by checks for every product
+  (passioncode-ai/.github `docs/release-signing/DESIGN.md`, "Approval by checks";
+  `release-signing/products.json` `"approval": "checks"`).
+- **Decision:** `.github/workflows/release.yml` runs a `guard` job
+  (`passioncode-ai/.github/actions/release-guard@v1`, merged in #13 as `4392806`) that the `android`
+  job needs. A publishing run passes only when `main` contains the tagged commit and `ci.yml`
+  concluded `success` on that exact commit; with no run, or a cancelled one, the guard starts
+  `ci.yml` on the tag once and waits. A rehearsal (`publish=false`) passes without those checks. The
+  `release` environment has no reviewers (read back from the GitHub API on 2026-10-11:
+  `branch_policy` only). Only `release-approvers` can create, move or delete a `v*` tag (ruleset
+  `release-tags`), so pushing the tag is the release decision.
+- **What it costs:** no person looks at a run before it signs. What stands between a tag and a
+  published APK: the tag ruleset, the guard (main + green `ci.yml`), the published-certificate
+  check (`scripts/verify-release-apk.sh`), the Sigstore attestation and the GPG-signed `SHA256SUMS`.
+  `"approval": "people"` in `products.json` and a re-run of `setup-release-env.py` bring the click
+  back, with a new decision here.
+- **Consequences / affects:** `README.md`, `AGENTS.md` (Release row), `docs/deployment/signing.md`
+  (environment and steps 3 and 5).
+- **Supersedes:** DEC-0105; DEC-0104 in its approval wording only
+- **Source:** operator decision 2026-10-11 (passioncode-ai/.github #38, #39, #40) · fabric-vr #13
