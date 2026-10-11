@@ -35,7 +35,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Approval by checks (passioncode-ai/.github docs/release-signing/DESIGN.md, operator 2026-10-11):
+  # every job that holds the release environment's keys needs this one, which passes a publishing
+  # run only when main contains the tagged commit and CI passed on that exact commit.
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      actions: write   # starts CI on the tag when none ran on the commit
+    steps:
+      - uses: passioncode-ai/.github/actions/release-guard@v1
+        with:
+          workflows: ci.yml
+          publish: ${{ github.event_name == 'push' || inputs.publish }}
+
   android:
+    needs: [guard]
     name: build, sign and verify the APK
     runs-on: ubuntu-latest
     environment: release
