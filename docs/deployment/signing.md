@@ -15,11 +15,10 @@ not on a development machine, and it has three homes and no fourth:
    `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` — the original;
 2. the vault's **encrypted off-disk backup** — the second copy;
 3. this repository's protected GitHub environment **`release`**, as secrets of the same four names —
-   the copy CI signs with. The environment's reviewers are the team `release-approvers`, any member
-   of which may approve, the person who pushed the tag included (`prevent_self_review: false`, the
-   organization's rule since 2026-10-03: `passioncode-ai/.github` `release-signing/README.md`,
-   fabric-workspace `knowledge/rules.md` §11; `DEC-0105`); administrators cannot bypass it, and only `v*` tags
-   may deploy to it.
+   the copy CI signs with. The environment has no reviewers since 2026-10-11 (approval by checks,
+   `DEC-0106`, superseding `DEC-0105`): the `guard` job lets the `android` job start only when `main` contains the tagged
+   commit and `ci.yml` passed on it, and only `release-approvers` can push a `v*` tag (ruleset
+   `release-tags`); administrators cannot bypass the environment, and only `v*` tags may deploy to it.
 
 **Nobody's laptop holds it, and a build signed anywhere else is never published.** Headset testing
 stays **debug-signed**: `./gradlew :app:assembleDebug` and `scripts/install-on-quest.sh`, exactly
@@ -126,16 +125,15 @@ somebody opened it and saw the right fingerprint, not that it exists.*
 1. Merge the release commit to `main` through the gates, with its `CHANGELOG.md` section
    `## X.Y.Z` (the version is `versionName` in `app/build.gradle.kts`, without the `+<sha>`).
 2. Push an annotated tag: `git tag -a vX.Y.Z <commit> -m "Fabric VR X.Y.Z" && git push origin vX.Y.Z`.
-3. The `android` job waits for the `release` environment. Someone from `release-approvers` approves
-   it ("Review deployments"); the person who pushed the tag may.
+3. The `guard` job checks the tag against `main` and `ci.yml` on that commit (starting it on the tag
+   when it did not run); a refusal names its cause. The `android` job starts with no click.
 4. The job decodes the keystore into `$RUNNER_TEMP`, writes a `keystore.properties` with the path
    and alias only, runs `./gradlew :app:assembleRelease` with the passwords in the environment, and
    runs `scripts/verify-release-apk.sh` on the APK: APK Signature Scheme v2 or v3, exactly one
    signer, **this certificate's SHA-256**, a release manifest (not debuggable, `targetSdkVersion`
    34, `minSdkVersion` 29–34, arm64 only) and a `versionName` that is the tag's version. Any
    failure stops the release. It uploads `fabric-vr-X.Y.Z.apk` as `release-android`.
-5. `publish` (the organization's `release-publish.yml@v1`, a second approval because it holds the
-   GPG key) attests the APK with Sigstore, writes `SHA256SUMS` and `SHA256SUMS.asc`, and publishes
+5. `publish` (the organization's `release-publish.yml@v1`) attests the APK with Sigstore, writes `SHA256SUMS` and `SHA256SUMS.asc`, and publishes
    the GitHub release with the CHANGELOG section as its notes. A published release is never
    rewritten: a fix is a new tag.
 

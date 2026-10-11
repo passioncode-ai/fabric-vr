@@ -37,7 +37,7 @@ capture app. Source: `README.md` and `docs/handoff/`.
 | Install | `git submodule update --init --recursive`, then `./gradlew :app:assembleDebug` and sideload with `adb` (`README.md` → Build and install) |
 | Test (the gate) | `bash scripts/check-all.sh` |
 | Build | `./gradlew :app:assembleDebug` |
-| Release | a `vX.Y.Z` tag runs `.github/workflows/release.yml`: signed in CI only, after approval by `release-approvers`; rehearse on `vX.Y.Z-rc.N` with `-f publish=false` (`DEC-0104`, [docs/deployment/signing.md](docs/deployment/signing.md)) |
+| Release | a `vX.Y.Z` tag runs `.github/workflows/release.yml`: signed in CI only, approved by checks — tag on `main`, `ci.yml` green on it (`DEC-0106`); rehearse on `vX.Y.Z-rc.N` with `-f publish=false` (`DEC-0104`, [docs/deployment/signing.md](docs/deployment/signing.md)) |
 | MCP (register + proving call) | none yet: the app will reach Fabric only through Fabric's northbound MCP over one relay (Fabric ADR-0088), and the relay is not built |
 
 `README.md` ("Build and install", "Checks") has the requirements and the full steps: Android
