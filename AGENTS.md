@@ -3,12 +3,19 @@
 ## Read first
 
 1. The organization's
-   [roadmap](https://github.com/passioncode-ai/fabric-workspace/blob/main/knowledge/roadmap.md) —
+   [roadmap](https://github.com/passioncode-ai/fabric-workspace/blob/main/knowledge/roadmap.md):
    every major feature and release across PassionCode.ai as `RM-*` tracks with owner, phase and
    state. It is the entry point: a task here that serves a track names it, and the track's status
    is edited only in the roadmap.
-2. The PassionCode.ai knowledge base — `fabric-workspace/knowledge/` in your clone (org-index
-   `scripts/clone_all.sh` makes it) or https://wiki.passioncode.ai/knowledge — at least its
+1a. **The course check, before every change** ([rules §0](https://github.com/passioncode-ai/fabric-workspace/blob/main/knowledge/rules.md#0-the-course-check-the-plan-and-the-north-star-before-every-change)):
+   the [North Star](https://github.com/passioncode-ai/fabric-workspace/blob/main/knowledge/north-star.md) metric and
+   gaps, and the [one plan in waves](https://github.com/passioncode-ai/fabric-workspace/blob/main/docs/plans/2026-11-11-unified/README.md).
+   Name the track, plan row or gap the change serves; work that serves none goes to the board first.
+   This repository's row is *Fabric VR* in the
+   [roadmap](https://github.com/passioncode-ai/fabric-workspace/blob/main/knowledge/roadmap.md): parked
+   since 2026-09-29, waiting on the relay (Fabric ADR-0088).
+2. The PassionCode.ai knowledge base, `fabric-workspace/knowledge/` in your clone (org-index
+   `scripts/clone_all.sh` makes it) or https://wiki.passioncode.ai/knowledge: at least its
    [README](https://github.com/passioncode-ai/fabric-workspace/blob/main/knowledge/README.md),
    vision, principles and how-to-work.
 3. This file, then the organization's
@@ -201,3 +208,23 @@ In the same run: update this repository's docs with the change; if a cross-repos
 (a product, a version, a plan row, a principle), update the page in `fabric-workspace/knowledge/`
 that owns it; land both; publish (`node scripts/workspace.mjs sync` from a Fabric checkout) or
 leave it to the scheduled sync. Leave a handoff with the exact next task.
+<!-- SSHLG:PROJECT:BEGIN managed by npx sshlg-skills enroll. To opt out, replace the whole block with one SSHLG:PROJECT:OPTOUT comment line. -->
+## Family routes in this project
+
+Surface: `app-text` (detected).
+Signals:
+- string catalogue: `app/src/main/res/values/strings.xml`, `core-common/src/main/res/values/strings.xml`
+
+Routes that apply here (the global routing block says what each one owns):
+
+| Router | Answers | Setup here |
+|---|---|---|
+| `super-ux` | what the product must do | scenarios and their linter: present |
+| `sheleg-design` | how it looks and moves | nothing to seed |
+| `copywriting` | how it sounds | brand pack: missing (`/brand-init`) |
+| `evidence-docs` | what proves it | nothing to seed |
+| `task-pipeline` | how the change reaches the repository | DOCMAP: present |
+
+Remaining setup:
+- `/brand-init`: brand pack for `copywriting`, missing `docs/brand/voice.md`, `docs/brand/terminology.md`, `docs/brand/facts.md`
+<!-- SSHLG:PROJECT:END -->

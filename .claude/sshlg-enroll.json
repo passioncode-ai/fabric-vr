@@ -1,0 +1,19 @@
+{
+  "schema": "sshlg-enroll-authorship/1",
+  "about": "Entries npx sshlg-skills enroll wrote into .claude/routers.json, as written. enroll --prune removes only these, only while unchanged, and only when a file they declare is gone.",
+  "wrote": {
+    "super-ux": {
+      "materialised": [
+        "docs/ux/scenarios.md"
+      ],
+      "guards": [
+        "docs/ux/lint.py"
+      ]
+    },
+    "task-pipeline": {
+      "materialised": [
+        "docs/DOCMAP.md"
+      ]
+    }
+  }
+}

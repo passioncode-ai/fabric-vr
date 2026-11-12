@@ -1,0 +1,15 @@
+{
+  "super-ux": {
+    "materialised": [
+      "docs/ux/scenarios.md"
+    ],
+    "guards": [
+      "docs/ux/lint.py"
+    ]
+  },
+  "task-pipeline": {
+    "materialised": [
+      "docs/DOCMAP.md"
+    ]
+  }
+}
